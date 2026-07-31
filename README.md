@@ -75,6 +75,18 @@ Funciona em qualquer linguagem, sem alteracao.
 Agente: `refutador` - contexto separado, le o diff cru, prompt de refutacao. **O unico com
 evidencia empirica**: 7 execucoes, 17 defeitos reproduzidos.
 
+Skills de CICLO DE VIDA - as duas metades, e sem a segunda a config so cresce:
+
+| Skill | Papel |
+|---|---|
+| `/forge` | Cria skill ou agente. Default e NAO criar: medido, 39 de 49 skills nao deram ganho e 3 DEGRADARAM (SWE-Skills-Bench). Exige benchmark via `skill-creator` antes de virar permanente. |
+| `/depreciar` | Mede uso REAL nos dois canais de invocacao e propoe remocao com evidencia. Nunca arquiva sozinho, e arquivar e sempre reversivel. |
+
+`scripts/medir-skills.sh` faz a medicao. Ela le **dois canais**: `tool_use` (modelo invoca) e
+`/nome` no texto (usuario invoca) - que aparecem de formas diferentes no transcript. Consultar
+so o primeiro produz falso "nunca usada": aconteceu com `defesa-de-tese`, que tinha 0 no canal
+do modelo e 7 no do usuario, e foi arquivada por engano.
+
 ### Camada 1 - adaptadores de toolchain
 
 O hook **nao conhece linguagem nenhuma**. Le `adapters/*.json`. Suportar um ecossistema novo e

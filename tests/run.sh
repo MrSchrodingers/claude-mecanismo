@@ -154,6 +154,22 @@ RO=$(jq -nc --arg s "$BIG" '{tool_name:"Bash",tool_response:{stdout:$s,stderr:""
 printf '%s' "$RO" | jq -e '.hookSpecificOutput.updatedToolOutput | type == "object"' >/dev/null 2>&1
 chk "output-budget emite OBJETO (string era rejeitada pelo runtime)" $? 0
 
+echo "== 9. ciclo de vida de skill: criar E depreciar =="
+SK="$PWD/camada0-universal/skills"
+for k in forge depreciar; do
+  [ -f "$SK/$k/SKILL.md" ]; chk "skill $k presente" $? 0
+  head -1 "$SK/$k/SKILL.md" | grep -q '^---$'; chk "  $k tem frontmatter" $? 0
+  grep -q '^description:' "$SK/$k/SKILL.md"; chk "  $k tem description (o gatilho)" $? 0
+done
+# o ciclo so fecha se um aponta para o outro
+grep -q 'depreciar' "$SK/forge/SKILL.md"; chk "forge aponta para o depreciador (ciclo fechado)" $? 0
+grep -q 'forge' "$SK/depreciar/SKILL.md"; chk "depreciar aponta para o criador" $? 0
+# a armadilha dos dois canais precisa estar documentada, senao a medicao repete o erro
+grep -q 'tool_use' "$SK/depreciar/SKILL.md" && grep -q '/nome\|/cmd\|canal' "$SK/depreciar/SKILL.md"
+chk "depreciar documenta os DOIS canais de invocacao" $? 0
+grep -qE 'ressalva|\(a\)|\(b\)|\(c\)' "$SK/depreciar/SKILL.md"; chk "  documenta as ressalvas antes de arquivar" $? 0
+bash -n scripts/medir-skills.sh; chk "medir-skills.sh sintaxe" $? 0
+
 echo
 echo "================ PASS=$P  FAIL=$F ================"
 [ "$F" -eq 0 ] && echo "suite verde" || echo "suite VERMELHA"
