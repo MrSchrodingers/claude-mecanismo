@@ -1,0 +1,15 @@
+{
+  "ecossistema": "dotnet",
+  "detect": ["*.csproj", "*.sln", "*.fsproj", "global.json"],
+  "extensoes": [".cs", ".fs", ".csx", ".razor"],
+  "analyzer": {
+    "cmd": "dotnet format --verify-no-changes --no-restore",
+    "porque_nao_executa": "format usa o Roslyn para analisar e comparar; --no-restore evita rodar targets de restore."
+  },
+  "audit": { "cmd": "dotnet list package --vulnerable --include-transitive" },
+  "test": { "cmd": "dotnet test --nologo", "executa_codigo_do_repo": true },
+  "rejeitados": {
+    "dotnet build": "executa MSBuild targets declarados no .csproj, que podem rodar tarefas arbitrarias (Exec Command=...)."
+  },
+  "nota_unity": "Projeto Unity: o .csproj e gerado e o build real e do Editor. O analyzer acima ainda vale para o codigo C#; testes de PlayMode exigem o Unity Test Runner e sao `test`."
+}

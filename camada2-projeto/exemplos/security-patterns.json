@@ -1,0 +1,37 @@
+{
+  "_comment": "Padroes de dominio plugados no security-guidance@claude-plugins-official via extensibility.py (user_patterns). Formato da API de USUARIO do extensibility.py (rule_name/reminder/regex/substrings/paths/exclude_paths) - que NAO e o mesmo do SECURITY_PATTERNS nativo: o nativo usa callable em path_check, e chave desconhecida e DESCARTADA em silencio. Confundir os dois fez uma regra sem escopo disparar em .md. Motivo de existir: o plugin cobre 25 classes genericas (injecao, XSS, deserializacao, cripto) mas NAO cobre a familia A01 - controle de acesso quebrado - que e a vuln mais comum e a que mais se disfarca de CRUD rotineiro, nem os padroes especificos deste stack (Django, Temporal, DRF). Usar a maquina do plugin em vez de duplicar da: validacao de entrada, protecao anti-ReDoS e formatacao de mensagem ja testadas.",
+  "patterns": [
+    {
+      "rule_name": "django_queryset_sem_escopo_do_dono",
+      "_nota": "O lookahead negativo e o que distingue defeito de codigo correto. Sem ele, o padrao disparava tambem em .filter(id=request.GET['pk'], owner=request.user) - ou seja, no codigo CERTO. Alarme que toca sempre e alarme que se aprende a ignorar (normalizacao de desvio), e ai o mecanismo passa a custar sem proteger.",
+      "regex": "\\.objects\\.(filter|get)\\((?![^)]*\\b(owner|user_id|user|tenant|account|company|created_by|dono|empresa|cliente)\\b)[^)]{0,120}\\b(id|pk|uuid)\\s*=\\s*(request\\.(GET|POST|data|query_params)|kwargs|self\\.kwargs)",
+      "reminder": "Consulta filtra por ID vindo do REQUEST sem escopo do dono. E a forma modal do A01 (broken access control): o objeto e buscado por identificador que o atacante controla, e qualquer usuario autenticado le o registro de outro. Adicione o filtro de posse na MESMA query - .filter(id=..., owner=request.user) ou .filter(id=..., tenant=request.user.tenant) - e nao numa checagem posterior, que costuma ser esquecida em outro caminho. Se o objeto for deliberadamente publico, diga isso num comentario."
+    },
+    {
+      "rule_name": "drf_serializer_mass_assignment",
+      "regex": "fields\\s*=\\s*[\"']__all__[\"']|exclude\\s*=\\s*\\[\\s*\\]",
+      "reminder": "Serializer com fields='__all__' (ou exclude vazio) aceita QUALQUER campo do model vindo do request - inclusive is_staff, owner, tenant_id, saldo. E mass assignment. Liste os campos explicitamente. O custo de escrever a lista uma vez e menor que o de descobrir, em producao, que um usuario se promoveu a admin."
+    },
+    {
+      "rule_name": "ordenacao_ou_filtro_vindo_do_request",
+      "regex": "\\.(order_by|extra|raw)\\(\\s*(request\\.|f[\"'].*\\{)",
+      "reminder": "order_by/extra/raw recebendo string montada com dado do request. order_by aceita travessia de relacao (ex.: '?owner__password') e vaza estrutura; extra e raw sao sinks de SQL. Valide contra uma allowlist de colunas permitidas, nunca contra o que o cliente mandou."
+    },
+    {
+      "rule_name": "segredo_literal_no_codigo",
+      "regex": "(?i)(secret|token|api[_-]?key|passwd|password|private[_-]?key|credential)\\s*[:=]\\s*[\"'][A-Za-z0-9_/+=-]{16,}[\"']",
+      "reminder": "Possivel segredo literal no codigo. Verificado: o security-guidance nativo NAO emite aviso para este caso. Se for real: (1) rotacione a credencial - ela ja vazou para o historico do git no momento do commit; (2) mova para variavel de ambiente; (3) confirme com `git log -S` se ja entrou no historico. Apagar a linha no HEAD nao remove do historico."
+    },
+    {
+      "rule_name": "temporal_activity_sem_idempotencia",
+      "regex": "@activity\\.defn|@workflow\\.defn",
+      "reminder": "Activity/workflow do Temporal. O runtime REEXECUTA activity apos falha - o efeito colateral precisa ser idempotente ou protegido por chave de deduplicacao. Cobranca, envio de mensagem e escrita externa executadas duas vezes sao o modo de falha classico. Declare a politica de retry e a chave de idempotencia, ou justifique por que a operacao e naturalmente idempotente.",
+      "paths": [
+        "**/activities/**",
+        "**/workflows/**",
+        "**/*activit*",
+        "**/*workflow*"
+      ]
+    }
+  ]
+}

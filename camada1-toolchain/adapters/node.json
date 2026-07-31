@@ -1,0 +1,17 @@
+{
+  "ecossistema": "node",
+  "detect": ["package.json"],
+  "extensoes": [".js", ".mjs", ".cjs", ".ts", ".tsx", ".jsx", ".vue", ".svelte"],
+  "analyzer": {
+    "cmd": "node --check",
+    "porque_nao_executa": "--check faz apenas parsing sintatico; nao avalia o modulo. Aplicado por arquivo.",
+    "por_arquivo": true
+  },
+  "audit": { "cmd": "npm audit --omit=dev" },
+  "test": { "cmd": "npm test --silent", "executa_codigo_do_repo": true,
+            "nota": "roda o script definido no package.json DO REPO - conteudo arbitrario." },
+  "rejeitados": {
+    "npx --no-install tsc": "usa node_modules/.bin do repositorio; e binario do projeto, logo executor.",
+    "eslint": "carrega config e plugins do repo (eslint.config.js e codigo executavel)."
+  }
+}

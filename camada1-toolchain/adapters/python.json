@@ -1,0 +1,19 @@
+{
+  "ecossistema": "python",
+  "detect": ["pyproject.toml", "setup.cfg", "requirements.txt", "manage.py", "Pipfile", "*.py"],
+  "extensoes": [".py"],
+  "analyzer": {
+    "cmd": "ruff check --isolated --select F,E9 .",
+    "porque_nao_executa": "ruff e binario Rust que faz parsing do AST. --isolated ignora [tool.ruff] do repo, e ruff nao tem sistema de plugin. Nao importa modulo, nao executa nada."
+  },
+  "security_lint": {
+    "cmd": "ruff check --isolated --select S,B --no-cache .",
+    "porque_nao_executa": "mesmo motor; S = flake8-bandit portado (S602 shell=True, S301 pickle, S324 hash fraco, S608 SQL concatenado, S105/S106 segredo, S501 TLS off)"
+  },
+  "audit": { "cmd": "pip-audit --strict" },
+  "test": { "cmd": "python3 -m pytest -q -x", "executa_codigo_do_repo": true,
+            "nota": "importa conftest.py e os modulos de teste. `python3 -m` e nao o binario: o modulo insere o cwd em sys.path." },
+  "rejeitados": {
+    "mypy": "mypy.ini/pyproject pode declarar `plugins = <modulo do repo>`, que e execucao de codigo do projeto. So como `test`, nunca como analyzer."
+  }
+}

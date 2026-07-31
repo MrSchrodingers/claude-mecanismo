@@ -1,0 +1,15 @@
+{
+  "ecossistema": "rust",
+  "detect": ["Cargo.toml"],
+  "extensoes": [".rs"],
+  "analyzer": {
+    "cmd": "cargo fmt --all -- --check",
+    "porque_nao_executa": "rustfmt faz parsing e formatacao; nao compila nem executa build.rs."
+  },
+  "audit": { "cmd": "cargo audit" },
+  "test": { "cmd": "cargo test", "executa_codigo_do_repo": true,
+            "nota": "cargo check/build/test executam build.rs, que e codigo arbitrario do repo." },
+  "rejeitados": {
+    "cargo check": "executa build.rs. Executor, apesar do nome sugerir analise."
+  }
+}

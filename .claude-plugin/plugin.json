@@ -1,0 +1,8 @@
+{
+  "name": "claude-mecanismo",
+  "version": "0.1.0",
+  "description": "Configuracao para Claude Code construida sobre uma regra: mecanismo executado, nunca alegacao escrita. Tres camadas separadas por acoplamento - universal (funciona em qualquer linguagem), adaptadores de toolchain (suportar C#/Java/Rust e adicionar um arquivo JSON, nao editar hook) e projeto (padroes de stack ficam no repo). Cada agente exige fonte de sinal externo; personas e colegiados foram REFUTADOS por arguicao adversarial com repro, e o corpo de evidencia esta em docs/falseamento. Distingue analisador (le codigo como dado) de executor (roda codigo do repo) porque confundi-los era uma vulnerabilidade classe CVE-2025-59536.",
+  "author": { "name": "MrSchrodingers", "url": "https://github.com/MrSchrodingers" },
+  "license": "MIT",
+  "keywords": ["hooks","enforcement","evidence-based","toolchain-agnostic","security","falsification"]
+}

@@ -1,0 +1,11 @@
+{
+  "ecossistema": "go",
+  "detect": ["go.mod"],
+  "extensoes": [".go"],
+  "analyzer": {
+    "cmd": "go vet ./...",
+    "porque_nao_executa": "vet faz analise estatica sobre o AST tipado; compila para tipar mas nao executa main nem testes."
+  },
+  "audit": { "cmd": "govulncheck ./..." },
+  "test": { "cmd": "go test ./...", "executa_codigo_do_repo": true }
+}
