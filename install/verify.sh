@@ -14,6 +14,7 @@
 # carregado de origem gravavel tem integridade momentanea, nao autoridade. A fase seguinte
 # move a politica para managed settings; ate la, isto fica visivel em vez de implicito.
 set -uo pipefail
+export LC_ALL=C   # ver install/manifest.sh: digest nao pode depender do locale
 cd "$(dirname "$0")/.." || exit 1
 MAN="${1:-install/manifest.lock}"
 DEST="${CLAUDE_HOME:-$HOME/.claude}"
@@ -32,9 +33,9 @@ while IFS=$'\t' read -r tipo origem destino digest; do
   if [ -d "$alvo" ]; then
     # O MANIFESTO e a autoridade, tambem para diretorio. Comparar instalado contra a working
     # tree deixava o manifesto fora do circuito: repo drift passava despercebido localmente.
-    atual="$(cd "$alvo" && find . -type f -exec sha256sum {} + 2>/dev/null | sort -k2 | sha256sum | cut -c1-64)"
+    atual="$(cd "$alvo" && find . -type f -exec sha256sum {} + 2>/dev/null | LC_ALL=C sort -k2 | sha256sum | cut -c1-64)"
     esper="$digest"
-    fonte="$(cd "$origem" && find . -type f -exec sha256sum {} + 2>/dev/null | sort -k2 | sha256sum | cut -c1-64)"
+    fonte="$(cd "$origem" && find . -type f -exec sha256sum {} + 2>/dev/null | LC_ALL=C sort -k2 | sha256sum | cut -c1-64)"
     if [ "$fonte" != "$digest" ]; then
       printf '  REPO-DRIFT %-40s (working tree != manifesto; rode install/manifest.sh)\n' "$destino"; DRIFT=$((DRIFT+1)); continue
     fi

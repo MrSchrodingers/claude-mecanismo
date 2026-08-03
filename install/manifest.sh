@@ -5,6 +5,11 @@
 #
 # Formato (TSV): tipo <TAB> origem <TAB> destino <TAB> sha256
 set -uo pipefail
+# LC_ALL=C em toda ordenacao: o digest de diretorio dependia do locale. Sob en_US.UTF-8,
+# `SKILL.md` ordena DEPOIS de `references/`; sob C, antes. Duas maquinas com locales diferentes
+# produziam identidades diferentes para o MESMO conteudo. Encontrado pela CI, nao pela suite
+# local - que roda no mesmo locale e por construcao nao podia ver.
+export LC_ALL=C
 cd "$(dirname "$0")/.." || exit 1
 OUT="${1:-install/manifest.lock}"
 
@@ -16,7 +21,7 @@ emit(){ # $1=tipo $2=origem $3=destino
     # caminho NORMALIZADO (relativo a raiz do diretorio) para que o digest do repositorio e o
     # do instalado sejam comparaveis contra o MESMO valor do manifesto. Antes, verify.sh tinha
     # de recalcular a origem e comparava instalado<->working tree, deixando o manifesto de fora.
-    d="$(cd "$2" && find . -type f -exec sha256sum {} + 2>/dev/null | sort -k2 | sha256sum | cut -c1-64)"
+    d="$(cd "$2" && find . -type f -exec sha256sum {} + 2>/dev/null | LC_ALL=C sort -k2 | sha256sum | cut -c1-64)"
   else
     d="$(sha256sum "$2" 2>/dev/null | cut -c1-64)"
   fi
