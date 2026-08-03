@@ -1,2 +1,2 @@
-def f():
+def h():
     return indefinido

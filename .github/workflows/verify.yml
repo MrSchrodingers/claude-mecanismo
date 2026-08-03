@@ -1,0 +1,57 @@
+# GATE EXTERNO. Esta e a unica fronteira desta arquitetura que o ator governado nao sobrepoe.
+#
+# O hook Stop nao serve para isso, por quatro razoes verificadas: stop_hook_active libera a
+# parada seguinte; o runtime sobrepoe o hook apos N bloqueios; N vive em variavel dentro do
+# settings.json que o proprio ator escreve; e Stop nao dispara em interrupcao nem em erro de API.
+# Ver docs/adr/0022.
+#
+# Para que este workflow seja enforcement e nao decoracao, e preciso configurar no repositorio:
+#   Settings > Rules > required status check = "verify"
+#   proibir bypass para o ator, e exigir o check sobre o SHA exato.
+# Sem isso ele e feedback, como pre-commit - que `git commit --no-verify` ignora (medido).
+name: verify
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - name: ferramentas dos adaptadores
+        run: |
+          python3 -m pip install --quiet ruff
+          ruff --version && node --version && jq --version
+      - name: sintaxe de todo hook
+        run: |
+          rc=0
+          for f in control/hooks/*.sh execution/hooks/*.sh evidence/hooks/*.sh install/*.sh tests/*/*.sh; do
+            bash -n "$f" || { echo "QUEBRADO: $f"; rc=1; }
+          done
+          exit $rc
+      - name: adaptadores sao JSON valido e declaram efeitos
+        run: |
+          rc=0
+          for a in execution/adapters/code/*.json; do
+            jq -e . "$a" >/dev/null || { echo "JSON invalido: $a"; rc=1; }
+            jq -e '.exec.command and .exec.args and .declared_effects and .rationale' "$a" >/dev/null \
+              || { echo "contrato incompleto: $a"; rc=1; }
+          done
+          for a in execution/adapters/documents/*.json; do
+            jq -e . "$a" >/dev/null || { echo "JSON invalido: $a"; rc=1; }
+          done
+          exit $rc
+      - name: manifesto reflete a arvore
+        run: |
+          bash install/manifest.sh install/manifest.check >/dev/null
+          diff -u install/manifest.lock install/manifest.check \
+            || { echo "manifest.lock desatualizado - rode install/manifest.sh e commite"; exit 1; }
+      - name: regressao do gate
+        run: bash tests/unit/regressao-gate.sh
+      - name: validacao por mutacao
+        run: bash tests/mutation/run.sh
+      - name: suite legada
+        run: bash tests/unit/run.sh
