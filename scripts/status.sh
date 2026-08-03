@@ -21,9 +21,16 @@ TMP="$(mktemp)"
   printf 'NAO EDITAR. Gerado por `scripts/status.sh` a partir de execucao real.\n'
   printf 'O README referencia este arquivo em vez de duplicar numeros.\n\n'
   printf '## Suites\n\n| Suite | Assercoes | Exit |\n|---|---:|---:|\n'
+  # CONTAGEM AMBIENTE-DEPENDENTE nao entra como numero fixo: `reprodutibilidade.sh` exercita um
+  # locale por variante disponivel, entao da 8 numa maquina com pt_BR/de_DE e 6 num runner que
+  # so tem en_US. Registrar o numero faria este arquivo divergir por ambiente - o mesmo drift
+  # que ele existe para impedir. A CI pegou isso na primeira execucao. Para essas suites vale o
+  # exit code, que e estavel; a contagem fica marcada como variavel.
   for t in tests/unit/regressao-gate.sh tests/unit/document-tools.sh tests/unit/supply-chain.sh \
            tests/unit/reprodutibilidade.sh tests/unit/run.sh; do
-    n="$(conta "$t")"; bash "$t" >/dev/null 2>&1; rc=$?
+    bash "$t" >/dev/null 2>&1; rc=$?
+    if grep -q 'EXPECTED=\$((' "$t"; then n="variavel (ambiente)"
+    else n="$(conta "$t")"; fi
     printf '| `%s` | %s | %s |\n' "$t" "${n:-?}" "$rc"
   done
   printf '\n## Mutacao\n\n| Alvo | Mutantes | Exit |\n|---|---:|---:|\n'

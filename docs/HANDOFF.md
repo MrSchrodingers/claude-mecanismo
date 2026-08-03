@@ -217,7 +217,12 @@ configurar e nao construir.
 5. **`locale` ecoa o nome pedido mesmo para locale inexistente.** Verificar nome nao verifica
    efeito; use discriminador comportamental.
 6. **`sed 'y/.../.../'` quebra sob `LC_ALL=C`** com multi-byte. Substituicao literal por byte.
-7. **`$TMPDIR` pode estar vazio no zsh** - `"$TMPDIR/x"` vira `/x` e falha com permission denied.
+7. **As suites NAO sao reentrantes.** `G10` executa `install/apply.sh`, que escreve
+   `install/manifest.lock` e `~/.claude`. Duas execucoes concorrentes se corrompem: medido, uma
+   deu `29/exit 0` e a simultanea `27/exit 1`. Isoladas, tres execucoes seguidas dao 29/29.
+   Na CI e sequencial, entao nao aparece la. **Rode uma suite por vez**; se um comando ficou em
+   background, espere. Corrigir de verdade exigiria lock no diretorio de trabalho - escopo aberto.
+8. **`$TMPDIR` pode estar vazio no zsh** - `"$TMPDIR/x"` vira `/x` e falha com permission denied.
 
 ---
 

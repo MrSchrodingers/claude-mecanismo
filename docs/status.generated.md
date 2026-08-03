@@ -10,7 +10,7 @@ O README referencia este arquivo em vez de duplicar numeros.
 | `tests/unit/regressao-gate.sh` | 29 | 0 |
 | `tests/unit/document-tools.sh` | 21 | 0 |
 | `tests/unit/supply-chain.sh` | 6 | 0 |
-| `tests/unit/reprodutibilidade.sh` | 8 | 0 |
+| `tests/unit/reprodutibilidade.sh` | variavel (ambiente) | 0 |
 | `tests/unit/run.sh` | 40 | 0 |
 
 ## Mutacao
