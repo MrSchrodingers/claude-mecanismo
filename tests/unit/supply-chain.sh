@@ -38,27 +38,54 @@ chk "runs-on nao usa -latest" \
     "$(grep -h "runs-on:" "$WF"/*.yml | grep -c -- "-latest" | tr -d ' ')" "0"
 
 echo "== S4. dependencia de sistema NAO pinada e DECLARADA, nao silenciosa =="
+# TERMINOLOGIA: isto compra AUDITABILIDADE, nao reprodutibilidade. `ubuntu-24.04` fixa a familia
+# da imagem, nao seu digest, e `apt-get update` consulta o estado corrente do repositorio: duas
+# execucoes em datas diferentes podem instalar versoes diferentes. Registrar as versoes permite
+# saber DEPOIS o que rodou; nao torna o build hermetico. Hermeticidade exigiria container por
+# digest ou snapshot de repositorio apt - fase posterior.
 # apt no runner nao tem pinagem estavel: fixar a versao quebra quando a imagem atualiza. O
 # honesto e registrar a excecao no proprio workflow, para que ela seja uma decisao visivel e
 # nao um esquecimento indistinguivel dos outros.
-if grep -q "apt-get install" "$WF"/*.yml 2>/dev/null; then
+if grep -qE "apt-get.*install" "$WF"/*.yml 2>/dev/null; then
   chk "a excecao do apt esta justificada por escrito" \
-      "$(grep -B10 -A1 "apt-get install" "$WF"/*.yml | grep -qi "EXCECAO DECLARADA" && echo sim || echo nao)" "sim"
+      "$(awk '/- name:/{blk=""} {blk=blk $0 "\n"} /apt-get.*install/{print blk; exit}' "$WF"/*.yml | grep -qi "EXCECAO DECLARADA" && echo sim || echo nao)" "sim"
 fi
 
-echo "== S5. as versoes pip da CI batem com as declaradas pelos adaptadores =="
-# O adaptador declara o que precisa; a CI instala. Divergencia entre os dois significa que a
-# suite valida um ambiente que o adaptador nao pede - ou o contrario.
-DECL="$(jq -r '.requires.python_packages[]? // empty' execution/adapters/documents/*.json 2>/dev/null | sed 's/[<>=].*//' | sort -u)"
-MISS=""
-for d in $DECL; do
-  grep -h "pip install" "$WF"/*.yml | grep -q "'$d==" || MISS="$MISS $d"
-done
-chk "todo pacote declarado por adaptador e instalado pela CI" "${MISS:-nenhum}" "nenhum"
+echo "== S5. a CI instala versao COMPATIVEL com o que os adaptadores declaram =="
+# Antes so conferia o NOME: `pandas>=2.2` declarado com `pandas==1.5.0` instalado passava,
+# porque o constraint era removido com sed antes de comparar. Presenca nao e compatibilidade.
+S5="$(python3 - <<'PY'
+import glob, json, re, sys
+try:
+    from packaging.requirements import Requirement
+    from packaging.version import Version
+except Exception:
+    print("SKIP:packaging ausente"); sys.exit(0)
+inst = {}
+for wf in glob.glob(".github/workflows/*.yml"):
+    for line in open(wf):
+        if "pip install" not in line: continue
+        for tok in re.findall(r"'([^']+)'", line):
+            if "==" in tok:
+                n, v = tok.split("==", 1); inst[n.lower()] = v
+prob = []
+for a in glob.glob("execution/adapters/documents/*.json"):
+    for raw in (json.load(open(a)).get("requires") or {}).get("python_packages", []):
+        r = Requirement(raw); n = r.name.lower()
+        if n not in inst: prob.append(f"{r.name}: declarado, NAO instalado pela CI"); continue
+        if r.specifier and not r.specifier.contains(Version(inst[n]), prereleases=True):
+            prob.append(f"{r.name}: CI instala {inst[n]}, incompativel com '{r.specifier}'")
+print("OK" if not prob else "; ".join(prob))
+PY
+)"
+case "$S5" in
+  SKIP:*) echo "  SKIP  $S5 (nao da para validar specifier)" ;;
+  *)      chk "versao instalada satisfaz o specifier declarado" "$S5" "OK"; P_S5=1 ;;
+esac
 
 echo
 echo "================ PASS=$P  FAIL=$F ================"
-EXPECTED=5
+EXPECTED=$((4 + ${P_S5:-0}))
 if [ "$P" -ne "$EXPECTED" ]; then echo "CONTAGEM INESPERADA: PASS=$P, esperado $EXPECTED"; exit 1; fi
 [ "$F" -eq 0 ] && echo "cadeia de suprimentos verde ($P/$EXPECTED)" || echo "cadeia de suprimentos VERMELHA"
 exit $([ "$F" -eq 0 ] && echo 0 || echo 1)
