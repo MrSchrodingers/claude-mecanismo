@@ -47,6 +47,9 @@ emit(){ # $1=tipo $2=origem $3=destino
   for f in execution/adapters/documents/*.json; do
     [ -f "$f" ] || continue; emit adapter "$f" "evidence-gate/adapters/documents/$(basename "$f")"
   done
+  for f in execution/document-tools/*; do
+    [ -f "$f" ] || continue; emit doctool "$f" "evidence-gate/document-tools/$(basename "$f")"
+  done
 } > "$OUT"
 
 n=$(grep -vc '^#' "$OUT")

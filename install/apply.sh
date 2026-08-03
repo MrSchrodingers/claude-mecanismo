@@ -60,7 +60,7 @@ while IFS=$'\t' read -r tipo origem destino digest; do
   alvo="$DEST/$destino"
   mkdir -p "$(dirname "$alvo")"
   if [ -d "$origem" ]; then rm -rf "$alvo"; cp -a "$origem" "$alvo"
-  else cp -a "$origem" "$alvo"; [ "${destino%%/*}" = "hooks" ] && chmod +x "$alvo"; fi
+  else cp -a "$origem" "$alvo"; case "$destino" in hooks/*|*/document-tools/*) chmod +x "$alvo";; esac; fi
   N=$((N+1))
 done < "$MAN"
 echo "componentes instalados: $N"
@@ -121,9 +121,9 @@ JSON
 )"
 TMPS="$(mktemp)"
 if jq --argjson h "$HOOKS_JSON" \
-      --arg ad "$DEST/evidence-gate/adapters/code" \
+      --arg ad "$DEST/evidence-gate/adapters/code" --arg dd "$DEST/evidence-gate/adapters/documents" \
       --arg rp "$REPO" \
-      '.hooks=$h | .env=((.env//{}) + {CLAUDE_ADAPTERS_DIR:$ad, EVIDENCE_GATE_REPO:$rp})' \
+      '.hooks=$h | .env=((.env//{}) + {CLAUDE_ADAPTERS_DIR:$ad, DOC_ADAPTERS_DIR:$dd, EVIDENCE_GATE_REPO:$rp})' \
       "$S" > "$TMPS" 2>/dev/null && jq -e . "$TMPS" >/dev/null 2>&1; then
   mv "$TMPS" "$S"; echo "settings.json: hooks registrados, demais chaves preservadas"
 else

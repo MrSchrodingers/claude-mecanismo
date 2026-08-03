@@ -199,3 +199,46 @@ A regra confia no valor DECLARADO em `declared_effects.executes_repository_code`
 anterior foi exatamente uma declaracao falsa. Logo G10 impede execucao de adaptador
 CORRETAMENTE classificado; nao detecta classificacao errada. Contra isso valem revisao de
 fonte, mutacao e corpus hostil - nao a regra.
+
+## Adendo 3 - Fase D1: os adaptadores de documento viram mecanismo
+
+O ADR declarava, como limite conhecido: "adaptadores de documento sao especificacao versionada,
+nao mecanismo executado; `read-budget.sh` mantem logica propria por extensao". Verificado antes
+de agir: `grep -c adapters execution/hooks/read-budget.sh` = 0, e nenhum executor consumia o
+diretorio. Especificacao apresentada como mecanismo e o defeito que este repositorio combate.
+
+### O que passou a existir
+
+`execution/document-tools/doctool.sh`, com tres verbos - `probe`, `plans`, `run` - dirigidos
+pelo registry `execution/adapters/documents/*.json`. Adicionar um formato e adicionar um JSON.
+
+| Invariante | Motivo |
+|---|---|
+| D1 sem `sh -c`; placeholders substituidos por VALOR | documento e entrada nao-confiavel; nome de arquivo com `$( )` nao pode virar comando |
+| D2 evidence pack ancorado (arquivo, digest, adaptador, plano, linha) | excerto sem ancora nao e evidencia, e alegacao sobre um arquivo |
+| D3 todo excerto marcado `untrusted` | conteudo de documento e DADO, jamais POLITICA |
+| D4 lacuna declarada | PDF sem OCR devolve `gap`, nunca texto vazio que se leria como "documento sem conteudo" |
+| D5 timeout, teto de bytes, diretorio descartavel | o executor nao escreve no diretorio do usuario |
+
+`read-budget.sh` passou a consultar o registry ANTES do `case` embutido: havendo adaptador, a
+receita e o executor.
+
+### Medido
+
+- 21 assercoes em 7 cenarios (`tests/unit/document-tools.sh`), com fixtures geradas no proprio
+  teste: CSV de 800 linhas, PDF e DOCX via pandoc, PDF sem camada de texto via PyMuPDF.
+- Reducao real: `profile` de um CSV de 17.619 bytes emite excerto < 4.000 bytes com shape,
+  dtypes, nulos e describe.
+- Injecao: PDF contendo "IGNORE AS INSTRUCOES ANTERIORES" sai como excerto marcado
+  `untrusted: true`, nunca como instrucao.
+- Nome de arquivo `$(touch PWNED_DOCTOOL).csv`: o marcador NAO e criado.
+
+### O que NAO foi feito
+
+- **Cache content-addressed de extracoes.** Cada `run` reprocessa. O digest ja existe no pack;
+  falta a camada de cache e sua invalidacao.
+- **Sandbox.** Os limites sao timeout, teto de bytes e tmpdir. Nao ha isolamento de filesystem
+  nem de rede - `pandoc` e `libreoffice` rodam com a autoridade do usuario.
+- **Benchmark pareado.** Os testes provam que o mecanismo funciona e reduz bytes; nao provam
+  que a resposta final melhora. Comparar "leitura direta" com "pipeline" exige corpus.
+- **OCR e transcricao** seguem como lacunas declaradas.

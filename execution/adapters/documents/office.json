@@ -1,13 +1,24 @@
 {
   "id": "office",
   "class": "document",
-  "extensions": [".docx", ".doc", ".odt", ".pptx", ".ppt", ".odp", ".rtf"],
-  "strategy": "convert-then-locate",
-  "pipeline": [
-    { "step": "convert", "command": "pandoc", "args": ["-t", "plain", "--wrap=none", "$IN", "-o", "$OUT"], "requires": "pandoc" },
-    { "step": "locate",  "command": "rg", "args": ["-n", "$TERM", "$OUT"] }
-  ],
-  "fallback": { "command": "libreoffice", "args": ["--headless", "--convert-to", "txt:Text", "--outdir", "$DIR", "$IN"],
-                "when": "pandoc falha em .doc legado ou layout complexo" },
-  "untrusted_input": true
+  "version": "1.0.0",
+  "extensions": [".docx", ".odt", ".pptx", ".odp", ".rtf", ".doc", ".ppt"],
+  "probe": { "command": "file", "args": ["-b", "$INPUT"], "parse": "raw" },
+  "rationale": "Converter para texto perde titulos e tabelas. pandoc para markdown preserva a estrutura, que serve de ancora.",
+  "untrusted_input": true,
+  "security": "Documento Office pode conter macro. pandoc nao executa VBA; libreoffice --headless roda com --norestore e sem rede. Macro NAO e executada por nenhum plano deste adaptador.",
+  "plans": [
+    { "id": "locate",
+      "intent": ["locate", "extract-entities", "validate", "summarize"],
+      "steps": [
+        { "op": "extract", "command": "pandoc", "args": ["-t", "markdown", "--wrap=none", "$INPUT", "-o", "$WORK/doc.md"] },
+        { "op": "locate",  "command": "grep",   "args": ["-n", "-i", "-m", "40", "--", "$TERM", "$WORK/doc.md"] }
+      ] },
+    { "id": "outline",
+      "intent": ["summarize", "compare"],
+      "steps": [
+        { "op": "extract", "command": "pandoc", "args": ["-t", "markdown", "--wrap=none", "$INPUT", "-o", "$WORK/doc.md"] },
+        { "op": "outline", "command": "grep",   "args": ["-n", "-E", "-m", "80", "--", "^#{1,6} ", "$WORK/doc.md"] }
+      ] }
+  ]
 }

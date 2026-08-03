@@ -1,16 +1,18 @@
 {
   "id": "spreadsheet",
   "class": "document",
+  "version": "1.0.0",
   "extensions": [".xlsx", ".xls", ".ods", ".csv", ".tsv"],
-  "strategy": "aggregate-before-row",
+  "probe": { "command": "python3", "args": ["$TOOLS/probe_sheet.py", "$INPUT"], "parse": "json" },
   "rationale": "Planilha se le por AGREGACAO primeiro. Despejar linhas em contexto e o erro caro: shape, dtypes e describe cabem em poucas linhas e respondem a maioria das perguntas.",
-  "pipeline": [
-    { "step": "profile", "command": "python3", "args": ["-c", "$PROFILE_SCRIPT"], "requires": "pandas" },
-    { "step": "query",   "command": "python3", "args": ["-c", "$QUERY_SCRIPT"],
-      "note": "filtrar/agrupar em pandas e imprimir SO o recorte; nunca df completo" }
-  ],
-  "profile_script": "import pandas as pd,sys; d=pd.read_excel(sys.argv[1]) if sys.argv[1].endswith(('.xlsx','.xls','.ods')) else pd.read_csv(sys.argv[1]); print('shape',d.shape); print(d.dtypes); print(d.head(5)); print(d.describe(include='all').T.head(30))",
-  "requires_python": ["pandas", "openpyxl"],
   "untrusted_input": true,
-  "security": "Formula de planilha pode conter payload (DDE, =cmd). Ler como DADO com pandas, nunca abrir em aplicacao que avalia formula."
+  "security": "Formula de planilha pode conter payload (DDE, =cmd). Lida como DADO via pandas com data_only; nunca aberta em aplicacao que avalia formula.",
+  "plans": [
+    { "id": "profile",
+      "intent": ["summarize", "validate", "compute"],
+      "steps": [ { "op": "profile", "command": "python3", "args": ["$TOOLS/profile_sheet.py", "$INPUT"] } ] },
+    { "id": "query",
+      "intent": ["locate", "extract-entities", "compute"],
+      "steps": [ { "op": "query", "command": "python3", "args": ["$TOOLS/query_sheet.py", "$INPUT", "$TERM"] } ] }
+  ]
 }
