@@ -1,77 +1,980 @@
 # evidence-gate
 
-Configuracao para Claude Code construida sobre uma regra:
+> **Harness experimental para Claude Code orientado por evidência, falsificabilidade e fronteiras explícitas de autoridade.**
 
-> Um artefato so atravessa a fronteira externa quando uma politica **fora da autoridade do ator**
-> confirma evidencia valida, nao obsoleta e vinculada ao mesmo snapshot.
+[![verify](https://github.com/MrSchrodingers/evidence-gate/actions/workflows/verify.yml/badge.svg)](https://github.com/MrSchrodingers/evidence-gate/actions/workflows/verify.yml)
 
-O harness interno nao certifica nada. Ele eleva a probabilidade de chegar a esse estado com
-baixo custo e baixo falso-bloqueio.
+## Resumo
 
-## Tres planos
+O `evidence-gate` parte de uma tese operacional simples:
 
-| Plano | Conteudo | Autoridade |
+> Um artefato só atravessa uma fronteira externa de integração quando uma política fora da autoridade do ator governado confirma evidência válida, não obsoleta e vinculada ao mesmo snapshot.
+
+O projeto não tenta provar que um modelo de linguagem “está certo”. Ele constrói um sistema no qual alegações de conclusão precisam ser convertidas em observações executáveis, rastreáveis e refutáveis. O Claude Code pode explorar, planejar, implementar e reparar; a sessão produz, no máximo, um **candidato**. A certificação pertence a uma verificação externa aplicada ao SHA exato e protegida por política de repositório.
+
+O estado operacional corrente, incluindo contagens, componentes e limitações, é gerado por execução real em [`docs/status.generated.md`](docs/status.generated.md). Este README evita duplicar números mutáveis: a documentação já divergiu do mecanismo uma vez, e narrativa em cópia separada reproduz a classe de defeito que originou o projeto.
+
+---
+
+## 1. Escopo das afirmações
+
+Este README distingue cinco classes de sustentação:
+
+1. **Decisão arquitetural** — escolha de projeto, sujeita a revisão.
+2. **Contrato oficial** — comportamento documentado por Claude Code, GitHub ou ferramenta primária.
+3. **Evidência empírica local** — comportamento observado na máquina de desenvolvimento.
+4. **Reprodução ambiental independente** — comportamento reproduzido em GitHub Actions.
+5. **Hipótese ainda não testada** — afirmação que exige corpus, auditoria ou experimento posterior.
+
+Os testes atuais sustentam a seguinte tese limitada:
+
+> Certas garantias mecânicas do harness são falsificáveis, reproduzíveis no domínio exercitado e sensíveis à remoção deliberada de suas implementações.
+
+Eles **não** sustentam a tese mais ampla:
+
+> O harness melhora, de forma estatisticamente robusta e generalizável, a qualidade da engenharia produzida por agentes de código.
+
+Em notação lógica, observar
+
+\[
+P(x_1),P(x_2),\ldots,P(x_n)
+\]
+
+não autoriza concluir
+
+\[
+\forall x\;P(x).
+\]
+
+A conclusão permitida é: `P` foi sustentada no domínio e nas condições testadas.
+
+---
+
+## 2. Modelo do sistema
+
+### 2.1 Agente e harness
+
+Adotamos o modelo operacional:
+
+\[
+Agent = Model + Harness
+\]
+
+com
+
+\[
+Harness = Context + Tools + Constraints + Verification + Correction.
+\]
+
+O modelo produz ações probabilísticas; o harness delimita contexto, ferramentas, autoridade, custo e critérios de aceitação. Essa separação segue a literatura contemporânea de engenharia de agentes e evita atribuir ao modelo capacidades que pertencem ao runtime ou aos verificadores [R1].
+
+### 2.2 Três planos
+
+```text
+control/
+    política, autoridade, integridade de configuração
+
+execution/
+    hooks, adaptadores, agentes, skills e ferramentas
+
+evidence/
+    verificadores, ledger, telemetria e CI
+```
+
+| Plano | Pergunta | Autoridade |
 |---|---|---|
-| `control/` | politica, integridade de configuracao, disciplina de artefato | decide o que pode |
-| `execution/` | hooks de execucao, adaptadores, agentes, skills | faz o trabalho |
-| `evidence/` | verificador, ledger de vereditos, telemetria, CI | registra o que foi observado |
+| `control/` | O que pode executar e sob qual política? | define capacidade e limites |
+| `execution/` | Como o trabalho é realizado? | executa operações permitidas |
+| `evidence/` | O que foi observado e sobre qual snapshot? | registra, verifica e certifica |
 
-## O que este projeto aprendeu do jeito caro
+A separação reduz um erro recorrente: confundir o mecanismo que produz uma alteração com o mecanismo que autoriza sua integração.
 
-**O repositorio nao era o sistema.** 32 componentes ativos, 12 versionados (37,5%). Quatro hooks
-rodavam sem versionamento. O `verify-gate` instalado era uma versao anterior a do repositorio,
-sem a camada que o manifesto declarava implementada. Por meses, sem sinal - porque nao existia
-operacao de conferir. Ver `docs/adr/0022`.
+### 2.3 Máquina de estados
 
-**`Stop` nao e portao.** O runtime o sobrepoe apos N bloqueios consecutivos; `stop_hook_active`
-libera a parada seguinte; `Stop` nao dispara em interrupcao nem em erro de API; e o proprio N
-vive em `CLAUDE_CODE_STOP_HOOK_BLOCK_CAP`, dentro do `settings.json` que o ator escreve.
-Parametro de politica no espaco de escrita do governado nao e politica.
-
-**`pre-commit` nao e fronteira.** Medido: `git commit --no-verify` cria o commit com o hook
-reprovando. Feedback local, nao trust boundary.
-
-## Verificacao
-
-```
-bash tests/unit/regressao-gate.sh   # cada caso reproduz um defeito medido
-bash tests/unit/document-tools.sh   # executor documental, ponta a ponta
-bash tests/unit/supply-chain.sh     # pinagem do gate externo
-bash tests/unit/reprodutibilidade.sh# metamorfico: identidade invariante ao ambiente
-bash tests/mutation/run.sh          # kill precisa ser atribuivel ao caso-alvo
-bash tests/mutation/install.sh      # mutante do instalador
-bash scripts/status.sh              # regenera docs/status.generated.md
-bash install/verify.sh              # instalado == manifesto?
+```text
+DRAFT
+  -> LOCALLY_CHECKED
+  -> CANDIDATE
+  -> CI_VERIFIED
+  -> MERGEABLE
 ```
 
-A validacao por mutacao nao e opcional: a suite anterior deste repositorio tinha 40 casos verdes
-e sobreviveu ao false-green do verificador, porque contornava o mecanismo em vez de testa-lo.
+Estados de falha:
 
-## Instalacao
-
-```
-bash install/manifest.sh    # declara o estado desejado, com digest
-bash install/apply.sh       # aplica em ~/.claude, com backup
-bash install/verify.sh      # confere
+```text
+LOCAL_CHECK_FAILED
+NOT_VERIFIED
+CI_FAILED
+STALE_EVIDENCE
 ```
 
-`install/apply.sh --dry-run` mostra o plano sem escrever, remover ou criar backup - garantia
-coberta pelo caso G10, que compara o digest do diretorio antes e depois byte a byte. Ela foi
-quebrada uma vez: a convergencia por `--prune` rodava `rm -rf` antes de checar o modo.
+`READY` não faz parte do vocabulário interno da sessão. O estado final da sessão é, no máximo, `CANDIDATE`.
 
-Contagens, componentes e limites vivem em [`docs/status.generated.md`](docs/status.generated.md),
-gerado por `scripts/status.sh` a partir de execucao real. Este README nao duplica numeros: ele
-ja divergiu do mecanismo uma vez (afirmava 28 assercoes com a suite em 29), e narrativa em copia
-separada se afasta sem sinal - a classe de defeito que originou este projeto.
+Formalmente, para um artefato `x`, uma evidência `e` e uma política externa `P`:
 
-## Limites declarados
+\[
+Mergeable(x) \iff Candidate(x) \land Valid(e,x) \land Fresh(e,x) \land Authorized(P,e).
+\]
 
-- **A politica e gravavel pelo ator.** Esta fase e escopo de usuario. A raiz de confianca real
-  exige managed settings, `allowManagedHooksOnly` e launcher nao gravavel - fase 2, com sudo,
-  e so depois que todo hook estiver versionado, porque `allowManagedHooksOnly` desliga de uma
-  vez todo hook de escopo de usuario.
-- **Nao ha medicao de que isto melhora resultado de engenharia.** As suites verificam mecanismo
-  sob fixture. Desfecho exigiria corpus dimensionado por poder estatistico, com repeticoes e
-  analise hierarquica. Nao existe.
-- **A CI so e enforcement se configurada como required status check** sem bypass para o ator.
-  O workflow em `.github/workflows/verify.yml` e feedback ate que isso seja feito.
+A validade exige vínculo ao snapshot:
+
+\[
+Valid(e,x) \Rightarrow e.snapshot = digest(x).
+\]
+
+A frescura exige que código, verificadores e ambiente relevantes não tenham mudado:
+
+\[
+Fresh(e,x) \iff H(x,v,env,policy)=e.evidence\_key.
+\]
+
+---
+
+## 3. Por que `Stop`, `TaskCompleted` e pre-commit não são a fronteira
+
+### 3.1 `Stop`
+
+A documentação oficial do Claude Code estabelece que:
+
+- `Stop` executa quando o agente termina uma resposta;
+- não executa em interrupção do usuário;
+- falhas de API produzem `StopFailure`;
+- `stop_hook_active=true` indica continuação causada por um Stop hook;
+- `exit 2` pede que o agente continue, mas não certifica um artefato [R2].
+
+Portanto:
+
+\[
+StopBlocked \not\Rightarrow ArtifactCertified.
+\]
+
+No `evidence-gate`, o Stop hook é um mecanismo de feedback e reparo. Ele pode bloquear uma tentativa de parada ou retornar `additionalContext`, mas não constitui trust boundary.
+
+### 3.2 `TaskCompleted`
+
+`TaskCompleted` impede que uma tarefa explícita seja marcada como concluída. Não governa toda sessão, todo commit ou todo merge [R2]. Logo:
+
+\[
+TaskCompletedPass \not\Rightarrow Mergeable.
+\]
+
+### 3.3 pre-commit
+
+Hooks Git locais podem ser ignorados com `git commit --no-verify`. Assim:
+
+\[
+PreCommit = Feedback_{local}
+\]
+
+mas
+
+\[
+PreCommit \neq TrustBoundary.
+\]
+
+A fronteira só existe quando um status remoto é obrigatório e o ator governado não pode alterar ou contornar a política:
+
+\[
+ExternalGate(P,a) \iff RequiredCheck(P) \land \neg Bypass(a,P).
+\]
+
+A propriedade é sempre relativa ao ator e à política, nunca absoluta.
+
+---
+
+## 4. Threat model e raiz de confiança
+
+### 4.1 Ator governado
+
+O threat model mínimo precisa responder:
+
+- qual UID executa o Claude Code;
+- se esse UID pode editar `~/.claude/settings.json`;
+- se pode remover hooks, alterar plugins ou iniciar outro launcher;
+- se pode modificar CI, rulesets ou emitir status checks;
+- se possui `sudo` ou acesso administrativo.
+
+A propriedade estrutural é:
+
+\[
+policy \in writable(actor) \Rightarrow policy \text{ não é fronteira contra esse ator}.
+\]
+
+### 4.2 Estado atual
+
+A política ainda é `governed=user`. Isso significa que o projeto possui um harness robusto, mas não uma raiz de confiança completa.
+
+### 4.3 Fase de raiz gerenciada
+
+A evolução prevista utiliza:
+
+- managed settings;
+- `allowManagedHooksOnly`;
+- launcher não gravável pelo ator;
+- plugins autorizados e pinados;
+- policy digest registrado no runtime.
+
+A documentação oficial confirma que `allowManagedHooksOnly` bloqueia hooks de usuário, projeto e plugins não force-enabled, preservando somente hooks gerenciados, SDK hooks e plugins autorizados por política [R3].
+
+---
+
+## 5. Evidence ledger e cache de vereditos
+
+Um registro de evidência deve conter, no mínimo:
+
+```json
+{
+  "snapshot_digest": "sha256:...",
+  "verifier_digest": "sha256:...",
+  "environment_digest": "sha256:...",
+  "policy_digest": "sha256:...",
+  "verdict": "pass|fail|gap",
+  "evidence_ref": "sha256:..."
+}
+```
+
+A chave de reutilização é:
+
+\[
+K = H(snapshot, verifier, environment, policy).
+\]
+
+A regra de cache é:
+
+```text
+cached pass    -> pode ser reutilizado se K coincide
+cached fail    -> não vira sucesso; reexecuta ou continua bloqueando
+cached gap     -> não é sucesso; reexecuta quando a capacidade existir
+cache ausente  -> executa
+```
+
+O defeito original gravava carimbo antes do verificador e transformava falha anterior em sucesso posterior. A garantia atual é:
+
+\[
+CachedFail(K) \not\Rightarrow Pass(K).
+\]
+
+O `environment_digest` inclui caminho real, SHA-256 completo e versão dos executáveis relevantes. Ele ainda não representa imagem hermética, bibliotecas dinâmicas ou toda variável ambiental; essa limitação é declarada.
+
+---
+
+## 6. Contrato científico dos testes
+
+Uma pós-condição verdadeira não prova que a operação ocorreu. Cinco defeitos desta evolução compartilharam a estrutura:
+
+```text
+precondição falha
+-> operação não executa
+-> pós-condição é vacuamente verdadeira
+-> teste fica verde
+```
+
+O contrato completo adotado é:
+
+\[
+Preconditions
+\land TreatmentApplied
+\land OracleDiscriminating
+\land OperationExecuted
+\land Postcondition.
+\]
+
+### 6.1 Dependência do oráculo versus variação ambiental
+
+| Pré-requisito ausente | Significado | Tratamento |
+|---|---|---|
+| dependência do oráculo | o teste não foi realizado | `exit 2`, `NOT_VERIFIED` |
+| variante ambiental | uma variante não pôde ser exercitada | `SKIP`, com guarda exigindo ao menos uma variante válida |
+
+Exemplo: sem `packaging`, a compatibilidade de `SpecifierSet` não pode ser avaliada. Isso não é `SKIP`; é `NOT_VERIFIED`.
+
+Exemplo: um locale inexistente pode ser ignorado, desde que ao menos um locale com ordenação comprovadamente distinta de `C` seja exercitado.
+
+### 6.2 Contagem invariável
+
+Cada suíte possui `EXPECTED` fixo. Isso impede que um matcher quebrado, fixture ausente ou bloco não executado reduza silenciosamente a cobertura:
+
+\[
+ExecutedCases = ExpectedCases.
+\]
+
+---
+
+## 7. Estratégias de verificação
+
+### 7.1 Regressão
+
+Cada caso reproduz um mecanismo observado, executa o componente real e exige saída e exit code específicos. Um teste chamado “bug do throttle” só é válido se montar o estado que causava o false-green.
+
+```bash
+bash tests/unit/regressao-gate.sh
+```
+
+As contagens correntes são publicadas em [`docs/status.generated.md`](docs/status.generated.md).
+
+### 7.2 Mutation testing
+
+Mutation testing avalia a sensibilidade da suíte à remoção deliberada de uma garantia [R4]. Para uma garantia `g` e seu mutante `m_g`:
+
+\[
+Test(S \setminus g)=FAIL.
+\]
+
+Um mutante só é considerado válido quando:
+
+1. o baseline passa;
+2. a transformação foi aplicada;
+3. o arquivo mutado permanece sintaticamente válido quando esperado;
+4. o teste-alvo falha;
+5. a falha é atribuível à propriedade removida.
+
+```bash
+bash tests/mutation/run.sh
+bash tests/mutation/install.sh
+```
+
+### 7.3 Testes metamórficos
+
+Quando não existe um output absoluto conveniente, testa-se uma relação necessária entre execuções [R5].
+
+Para o manifesto:
+
+\[
+Manifest(tree,locale_1)=Manifest(tree,locale_2),
+\]
+
+desde que os locales sejam comportamentalmente distintos na ordenação sentinela.
+
+```bash
+bash tests/unit/reprodutibilidade.sh
+```
+
+### 7.4 Property-based testing
+
+É a próxima extensão recomendada para:
+
+- parsers de workflow;
+- placeholders;
+- paths e filenames hostis;
+- manifestos e digests;
+- eventos incompletos;
+- combinações de estado.
+
+A escolha segue o princípio de maior retorno observado: gerar muitos casos estruturados sem manter uma especificação formal paralela [R6].
+
+### 7.5 Métodos formais
+
+TLA+, Alloy ou model checking não são prioridade automática. Serão considerados quando surgirem defeitos de concorrência, composição de autoridades, races snapshot-evidência ou transições que testes gerativos não cubram adequadamente. O custo de manter especificação e implementação sincronizadas deve ser comparado ao ganho marginal.
+
+---
+
+## 8. Adaptadores de código
+
+Adaptadores são contratos declarativos com:
+
+- extensões aplicáveis;
+- `command` e `args[]`;
+- dependências;
+- efeitos declarados;
+- rationale;
+- classificação de execução de código do repositório.
+
+Não se usa `sh -c` para compor comandos provenientes de dados não confiáveis.
+
+```json
+{
+  "exec": {
+    "command": "ruff",
+    "args": ["check", "--", "$FILES"]
+  },
+  "declared_effects": {
+    "executes_repository_code": false
+  }
+}
+```
+
+Se `executes_repository_code=true`, o adaptador não roda por autodetecção; vira lacuna declarada até existir sandbox ou aprovação apropriada.
+
+A classificação depende da declaração correta. O incidente de `.NET` demonstrou que uma regra não detecta uma classificação falsa; revisão de fonte primária e corpus hostil continuam necessários. A documentação da Microsoft adverte que `dotnet format` pode restaurar, compilar e executar analyzers do projeto [R7].
+
+### Monorepos
+
+Sem override explícito de projeto, todos os adaptadores aplicáveis devem passar:
+
+\[
+Candidate(x)=\bigwedge_{a\in Applicable(x)} Pass(a,x).
+\]
+
+Um `.claude/verify.json` aprovado constitui override semântico deliberado e substitui os adaptadores genéricos. A documentação não o descreve mais como conjunção universal.
+
+---
+
+## 9. Ferramentas documentais
+
+Os adaptadores de documentos deixaram de ser especificação passiva. O executor:
+
+```text
+execution/document-tools/doctool.sh
+```
+
+possui três verbos:
+
+```text
+probe
+plans
+run
+```
+
+O registry está em:
+
+```text
+execution/adapters/documents/*.json
+```
+
+### 9.1 Pipeline
+
+```text
+arquivo
+-> detecção/probe barato
+-> classificação da intenção
+-> seleção de plano
+-> execução limitada
+-> normalização
+-> evidence pack ancorado
+-> injeção seletiva em contexto
+```
+
+### 9.2 Princípio de redução
+
+Para um documento com conteúdo total `B` e informação relevante `I`, ferramentas especializadas têm maior retorno quando:
+
+\[
+\frac{I}{B}\ll 1.
+\]
+
+Exemplos:
+
+- PDF: localizar termos antes de renderizar páginas;
+- planilha: `shape`, tipos, nulos e agregações antes de linhas;
+- Office: preservar títulos e tabelas antes de resumir;
+- mídia: declarar lacuna quando OCR/transcrição não está disponível.
+
+### 9.3 Evidence pack
+
+```json
+{
+  "artifact_digest": "sha256:...",
+  "adapter": "pdf",
+  "plan": "text-search",
+  "untrusted": true,
+  "claims": [
+    {
+      "excerpt": "...",
+      "anchor": {"page": 14, "line": 320}
+    }
+  ],
+  "gaps": [],
+  "cost": {"bytes_emitted": 3120, "elapsed_ms": 870}
+}
+```
+
+Invariantes:
+
+- conteúdo documental é dado, nunca política;
+- todo excerto é marcado `untrusted`;
+- todo resultado possui digest e âncora;
+- lacunas são explícitas;
+- filenames hostis não viram shell;
+- há timeout e teto de bytes.
+
+```bash
+bash tests/unit/document-tools.sh
+```
+
+### 9.4 Limites atuais
+
+- sem sandbox real;
+- sem cache content-addressed;
+- sem OCR integrado;
+- sem transcrição;
+- sem benchmark pareado leitura direta versus pipeline.
+
+---
+
+## 10. Grafos de dependência
+
+Grafos ainda são uma linha exploratória, não uma garantia evidence-grade.
+
+Um grafo válido deve ser definido como:
+
+\[
+G_s=(V,E,\tau_V,\tau_E,\pi,s),
+\]
+
+onde:
+
+- `V`: nós;
+- `E`: arestas;
+- `τV`: tipos de nó;
+- `τE`: tipos de relação;
+- `π`: proveniência e âncoras;
+- `s`: snapshot do código.
+
+Toda aresta deve apontar para fonte verificável:
+
+```json
+{
+  "source": "PaymentService.charge",
+  "target": "FraudClient.check",
+  "relation": "calls",
+  "anchor": {"file": "payments/service.py", "line": 184},
+  "extractor": "python-ast",
+  "snapshot": "sha256:..."
+}
+```
+
+Métricas previstas:
+
+\[
+Precision=\frac{TP}{TP+FP},
+\qquad
+Recall=\frac{TP}{TP+FN}.
+\]
+
+Para análise de impacto:
+
+\[
+ImpactFNR=\frac{FN}{TP+FN}.
+\]
+
+O grafo deve ser comparado a baselines:
+
+```text
+source + rg
+source + LSP
+graph
+LSP + graph
+```
+
+O projeto não assume que grafos dominam LSP ou busca textual. O valor precisa ser medido por recall, precisão, custo, latência e taxa de staleness.
+
+---
+
+## 11. Skills, personas e subagentes
+
+### 11.1 Personas
+
+O estudo de Zheng et al. avaliou 162 personas e 2.410 questões, sem ganho médio confiável frente ao controle; os efeitos variaram por papel e domínio [R8]. Personas persistentes não são default.
+
+Preferimos checklists operacionais:
+
+```text
+liste premissas
+busque contraexemplos
+separe necessidade de suficiência
+registre o não verificado
+```
+
+em vez de papéis vagos como “aja como epistemólogo”.
+
+### 11.2 Skills
+
+O SWE-Skills-Bench reporta ganho médio pequeno, muitos deltas nulos, alguns ganhos especializados e regressões por incompatibilidade de versão [R9]. O SkillLearnBench mostra que feedback externo pode produzir melhoria, enquanto self-feedback isolado favorece recursive drift [R10].
+
+Consequências:
+
+- skills não são promovidas por intuição;
+- precisam ser específicas e version-aware;
+- skills geradas entram em quarentena;
+- promoção exige avaliação pareada;
+- documentação autoritativa pode virar cápsula temporária, não skill permanente.
+
+### 11.3 Subagentes
+
+Subagentes são partições de contexto, ferramentas, orçamento e autoridade. Não são usados apenas para paralelismo. Devem ser acionados quando houver sinal distinto, grande volume isolável, ferramenta específica ou unidade realmente paralelizável.
+
+O contrato de subagente é testado sob locales distintos para impedir rejeição indevida de retornos acentuados. O estado e as contagens correntes são derivados por `scripts/status.sh`.
+
+---
+
+## 12. Segurança e supply chain
+
+A CI verifica:
+
+- actions pinadas por SHA completo;
+- pacotes Python com versão exata;
+- runner nomeado, não `-latest`;
+- exceções de `apt` documentadas;
+- compatibilidade entre requisitos dos adaptadores e versões instaladas;
+- dependências dos próprios oráculos.
+
+```bash
+bash tests/unit/supply-chain.sh
+```
+
+A documentação do GitHub recomenda pinagem por SHA completo para actions imutáveis [R11].
+
+`ubuntu-24.04` e o registro de versões fornecem **auditabilidade**, não hermeticidade. O estado futuro desejado é uma imagem por digest:
+
+```text
+container@sha256:<digest>
+```
+
+com SBOM e digest incluídos no evidence ledger.
+
+---
+
+## 13. CI e enforcement
+
+O workflow executa:
+
+```text
+sintaxe
+contratos de adaptadores
+manifesto
+status gerado
+supply chain
+document tools
+metamorfismo
+regressão
+mutação do gate
+mutação do instalador
+suíte legada
+```
+
+```bash
+# execução local equivalente
+bash tests/unit/supply-chain.sh
+bash tests/unit/document-tools.sh
+bash tests/unit/reprodutibilidade.sh
+bash tests/unit/regressao-gate.sh
+bash tests/mutation/run.sh
+bash tests/mutation/install.sh
+bash tests/unit/run.sh
+bash scripts/status.sh --check
+bash install/verify.sh
+```
+
+O workflow só se torna gate quando configurado como required status check em ruleset sem bypass para o ator relevante [R12]. Até lá, é reprodução e feedback remoto.
+
+---
+
+## 14. Instalação e conformidade
+
+```bash
+bash install/manifest.sh
+bash install/apply.sh --dry-run
+bash install/apply.sh
+bash install/verify.sh
+```
+
+### 14.1 Invariantes
+
+Manifesto como autoridade:
+
+\[
+Installed = DesiredManifest.
+\]
+
+Dry-run não destrutivo:
+
+\[
+DRY=1 \Rightarrow State_{after}=State_{before}.
+\]
+
+Convergência segura:
+
+- remove apenas caminhos registrados em `managed-files.lock`;
+- não remove arquivos desconhecidos;
+- separa `REPO-DRIFT` de drift da instalação.
+
+### 14.2 Liveness
+
+`SessionStart` grava heartbeat quando o hook executa e ultrapassa suas precondições.
+
+\[
+HeartbeatPresent \Rightarrow HookExecuted.
+\]
+
+Mas:
+
+\[
+HeartbeatAbsent \not\Rightarrow Drift.
+\]
+
+Ausência também pode significar observador morto. A confirmação do runtime exige `/hooks`, `--debug` e, futuramente, raiz gerenciada.
+
+---
+
+## 15. Protocolo científico de evolução
+
+Para cada defeito ou proposta:
+
+1. formular a claim;
+2. definir condição de refutação;
+3. reproduzir antes de corrigir;
+4. implementar a menor correção estrutural;
+5. criar regressão;
+6. criar mutante ou transformação negativa;
+7. executar em ambiente distinto;
+8. registrar escopo e limitações.
+
+Um registro futuro de claims terá a forma:
+
+```yaml
+claim_id: C-001
+claim: "Falha em cache nunca é reutilizada como sucesso."
+type: empirical-invariant
+scope:
+  commit: "<sha>"
+  platforms: [local-linux, github-ubuntu-24.04]
+evidence:
+  regression: [G1]
+  mutants: [M1]
+warrant:
+  - "O mutante que remove a distinção fail/pass é morto por G1."
+counterexamples:
+  - commit: "estado anterior"
+    result: refuted
+limitations:
+  - "Não é prova universal."
+status: supported-in-tested-domain
+```
+
+---
+
+## 16. Avaliação estatística futura
+
+### 16.1 Unidade experimental
+
+\[
+u=(task,repo\_snapshot,environment,model,runtime,seed).
+\]
+
+### 16.2 Primeiro contraste
+
+```text
+A: Claude Code baseline
+B: harness mínimo evidence-gated
+```
+
+Sem personas, grafos ou skills adicionais, para isolar o núcleo.
+
+### 16.3 Métricas seletivas
+
+Unsafe acceptance rate:
+
+\[
+UAR=P(ACCEPT\mid external\ fail).
+\]
+
+Unnecessary rejection rate:
+
+\[
+URR=P(REJECT\mid external\ pass).
+\]
+
+Abstention rate:
+
+\[
+AR=P(ABSTAIN).
+\]
+
+Verified yield:
+
+\[
+VY=P(ACCEPT\land external\ pass).
+\]
+
+Coverage:
+
+\[
+Coverage=P(non\text{-}abstain).
+\]
+
+Otimização proposta:
+
+\[
+\max VY
+\]
+
+sujeito a:
+
+\[
+UAR\leq\alpha,\quad URR\leq\beta,\quad AR\leq\gamma,
+\]
+
+\[
+security\_violations=0,
+\quad snapshot\_mismatch=0.
+\]
+
+### 16.4 Pares discordantes
+
+Para baseline e tratamento pareados:
+
+- `n01`: baseline falha, tratamento passa;
+- `n10`: baseline passa, tratamento falha.
+
+Efeito líquido:
+
+\[
+d=\frac{n_{01}-n_{10}}{n}.
+\]
+
+Discordância:
+
+\[
+q=\frac{n_{01}+n_{10}}{n}.
+\]
+
+McNemar usa os pares discordantes [R13]. Para múltiplos repositórios e repetições, serão usados bootstrap estratificado e modelo logístico hierárquico [R14].
+
+---
+
+## 17. Maturidade atual
+
+| Nível | Descrição | Estado |
+|---|---|---|
+| M0 | narrativa sem mecanismo | superado |
+| M1 | mecanismo executável | superado |
+| M2 | regressão, mutação, metamorfismo e CI ambientalmente independente | **atingido** |
+| M3 | enforcement, managed policy, sandbox e runtime confirmado | pendente |
+| M4 | eficácia medida em corpus congelado | pendente |
+| M5 | auditoria adversarial recorrente e garantias formais seletivas | pendente |
+
+Classificação atual:
+
+> **Protótipo experimental robusto, mecanicamente verificável e ambientalmente reproduzido; ainda não é trust boundary, não é hermético, não possui validação estatística de eficácia e não passou por auditoria autoralmente independente.**
+
+---
+
+## 18. Roadmap
+
+### P0 — validade operacional
+
+- validar `/hooks`, `--debug` e `/status`;
+- criar claim ledger;
+- manter o status documental gerado automaticamente.
+
+### P1 — enforcement
+
+- required status check;
+- ruleset sem bypass para o ator;
+- check sobre SHA exato.
+
+### P2 — raiz de confiança
+
+- managed settings;
+- `allowManagedHooksOnly`;
+- launcher não gravável;
+- plugins pinados e autorizados.
+
+### P3 — hardening
+
+- base para commits sem upstream;
+- sandbox;
+- container por digest;
+- property-based testing.
+
+### P4 — ciência de eficácia
+
+- corpus congelado;
+- testes ocultos;
+- seeds e repetições;
+- power analysis;
+- modelo hierárquico;
+- auditoria independente.
+
+### P5 — grafos e foundry
+
+- grafo incremental vinculado ao snapshot;
+- benchmark contra `rg` e LSP;
+- skill foundry em quarentena;
+- promoção apenas por evidência.
+
+---
+
+## 19. Estrutura do repositório
+
+```text
+control/      política e integridade
+execution/    hooks, adaptadores, agents, skills, document-tools
+evidence/     gate, ledger e telemetria
+install/      manifesto, apply, verify e lock de gerenciados
+scripts/      geração e validação do status documental
+tests/unit/   regressão, metamorfismo, supply-chain e legado
+tests/mutation/ mutation testing do gate e instalador
+docs/adr/     decisões, contraexemplos e limites
+.github/      verificação remota
+```
+
+---
+
+## 20. Referências
+
+### Claude Code e GitHub
+
+- **[R1]** Anthropic. *Claude Code documentation*. https://code.claude.com/docs/
+- **[R2]** Anthropic. *Hooks reference: Stop, StopFailure, TaskCompleted, ConfigChange and exit semantics*. https://code.claude.com/docs/en/hooks
+- **[R3]** Anthropic. *Claude Code settings: managed settings and allowManagedHooksOnly*. https://code.claude.com/docs/en/settings
+- **[R11]** GitHub. *Security hardening for GitHub Actions — pinning actions to a full-length commit SHA*. https://docs.github.com/en/actions/security-guides/security-hardening-for-github-actions
+- **[R12]** GitHub. *Required status checks, protected branches and rulesets*. https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-rulesets
+
+### Teste de software e estatística
+
+- **[R4]** Jia, Y.; Harman, M. “An Analysis and Survey of the Development of Mutation Testing.” *IEEE Transactions on Software Engineering*, 37(5), 2011. DOI: https://doi.org/10.1109/TSE.2010.62
+- **[R5]** Chen, T. Y.; Cheung, S. C.; Yiu, S. M. “Metamorphic Testing: A New Approach for Generating Next Test Cases.” https://arxiv.org/abs/2002.12543
+- **[R6]** Claessen, K.; Hughes, J. “QuickCheck: A Lightweight Tool for Random Testing of Haskell Programs.” ICFP 2000. https://doi.org/10.1145/351240.351266
+- **[R13]** McNemar, Q. “Note on the Sampling Error of the Difference Between Correlated Proportions or Percentages.” *Psychometrika*, 12, 1947. https://doi.org/10.1007/BF02295996
+- **[R14]** Efron, B.; Tibshirani, R. J. *An Introduction to the Bootstrap*. Chapman & Hall/CRC, 1993. https://doi.org/10.1007/978-1-4899-4541-9
+
+### Agentes, personas e skills
+
+- **[R8]** Zheng, M. et al. “When ‘A Helpful Assistant’ Is Not Really Helpful: Personas in System Prompts Do Not Improve Performances of Large Language Models.” https://arxiv.org/abs/2311.10054
+- **[R9]** Han, T. et al. “SWE-Skills-Bench: Do Agent Skills Actually Help in Real-World Software Engineering?” https://arxiv.org/abs/2603.15401 — repositório: https://github.com/GeniusHTX/SWE-Skills-Bench
+- **[R10]** Zhong, S. et al. “SkillLearnBench: Benchmarking Continual Learning Methods for Agent Skill Generation on Real-World Tasks.” https://arxiv.org/abs/2604.20087 — repositório: https://github.com/cxcscmu/SkillLearnBench
+
+### Ferramentas e segurança
+
+- **[R7]** Microsoft. *dotnet format documentation and security caution*. https://learn.microsoft.com/dotnet/core/tools/dotnet-format
+- OWASP. *Top 10 for Large Language Model Applications*. https://owasp.org/www-project-top-10-for-large-language-model-applications/
+- NIST. *AI Risk Management Framework*. https://www.nist.gov/itl/ai-risk-management-framework
+- SLSA. *Supply-chain Levels for Software Artifacts*. https://slsa.dev/
+- in-toto. *A framework to secure the integrity of software supply chains*. https://in-toto.io/
+
+---
+
+## 21. Limites declarados
+
+- a política ainda é gravável pelo ator;
+- a precedência runtime de hooks/plugins ainda precisa ser confirmada com `/hooks` e `--debug`;
+- a CI ainda depende de ruleset para se tornar enforcement;
+- o ambiente é auditável, não hermético;
+- comandos do repositório ainda exigem sandbox real;
+- commits locais sem upstream precisam de base explícita;
+- grafos não foram avaliados;
+- eficácia externa não foi medida;
+- telemetria longitudinal está incompleta;
+- não há auditoria autoralmente independente.
+
+Estas limitações não são notas laterais. Elas delimitam exatamente o que o projeto pode afirmar.
+
+---
+
+## 22. Regra de contribuição
+
+Toda nova garantia deve incluir:
+
+1. claim explícita;
+2. fonte ou rationale;
+3. contraexemplo reproduzível quando aplicável;
+4. teste de regressão;
+5. teste negativo ou mutante;
+6. precondições do oráculo;
+7. escopo e limitações;
+8. execução em CI.
+
+A regra final é:
+
+> Uma regra que depende de o autor lembrar de aplicá-la é uma expectativa. Ela se torna garantia somente quando sua violação produz automaticamente um sinal observável, atribuível e vinculado ao estado correto.
