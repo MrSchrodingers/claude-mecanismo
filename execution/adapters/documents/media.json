@@ -1,0 +1,15 @@
+{
+  "id": "media",
+  "class": "document",
+  "extensions": [".png", ".jpg", ".jpeg", ".webp", ".gif", ".mp4", ".mkv", ".mov", ".mp3", ".wav", ".m4a"],
+  "strategy": "reduce-before-read",
+  "pipeline": [
+    { "step": "probe",  "command": "ffprobe", "args": ["-hide_banner", "$IN"] },
+    { "step": "reduce_image", "command": "ffmpeg", "args": ["-i", "$IN", "-vf", "scale='min(1400,iw)':-1", "$OUT"],
+      "when": "imagem acima de ~2 MB ou resolucao alem do necessario" },
+    { "step": "extract_frames", "command": "ffmpeg", "args": ["-i", "$IN", "-vf", "fps=1/10", "$OUT_PATTERN"],
+      "when": "video: amostrar quadros em vez de tentar ler o arquivo" }
+  ],
+  "gaps": { "audio_transcription": { "needs": "whisper ou equivalente", "available": false,
+            "declare": "Nao ha transcritor local neste box. Declarar a limitacao, nao contornar com suposicao sobre o conteudo." } }
+}

@@ -1,0 +1,12 @@
+{
+  "id": "shell-analyzer",
+  "ecosystem": "shell",
+  "operation_class": "parse",
+  "detect": ["*.sh"],
+  "extensions": [".sh", ".bash"],
+  "exec": { "command": "bash", "args": ["-n"] },
+  "per_file": true,
+  "declared_effects": { "executes_repository_code": false, "writes_repository": false, "network": false },
+  "rationale": "`bash -n` le e faz parsing sem executar. Este adaptador existe porque o gate era INERTE no proprio repo desta configuracao, que e quase todo shell (docs/adr/0015).",
+  "limits": { "timeout_seconds": 60 }
+}

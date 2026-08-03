@@ -1,11 +1,12 @@
 {
-  "ecossistema": "go",
+  "id": "go-analyzer",
+  "ecosystem": "go",
+  "operation_class": "analyze",
   "detect": ["go.mod"],
-  "extensoes": [".go"],
-  "analyzer": {
-    "cmd": "go vet ./...",
-    "porque_nao_executa": "vet faz analise estatica sobre o AST tipado; compila para tipar mas nao executa main nem testes."
-  },
-  "audit": { "cmd": "govulncheck ./..." },
-  "test": { "cmd": "go test ./...", "executa_codigo_do_repo": true }
+  "extensions": [".go"],
+  "exec": { "command": "go", "args": ["vet", "./..."] },
+  "declared_effects": { "executes_repository_code": false, "writes_repository": false, "network": true },
+  "rationale": "go vet faz analise estatica. LIMITE DECLARADO: pode baixar dependencias do modulo se o cache estiver frio - por isso network=true, e o executor deve rodar com GOFLAGS=-mod=mod apenas em rede permitida.",
+  "limits": { "timeout_seconds": 180 },
+  "test": { "command": "go", "args": ["test", "./..."], "executes_repository_code": true }
 }

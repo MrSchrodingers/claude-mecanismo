@@ -1,0 +1,13 @@
+{
+  "id": "office",
+  "class": "document",
+  "extensions": [".docx", ".doc", ".odt", ".pptx", ".ppt", ".odp", ".rtf"],
+  "strategy": "convert-then-locate",
+  "pipeline": [
+    { "step": "convert", "command": "pandoc", "args": ["-t", "plain", "--wrap=none", "$IN", "-o", "$OUT"], "requires": "pandoc" },
+    { "step": "locate",  "command": "rg", "args": ["-n", "$TERM", "$OUT"] }
+  ],
+  "fallback": { "command": "libreoffice", "args": ["--headless", "--convert-to", "txt:Text", "--outdir", "$DIR", "$IN"],
+                "when": "pandoc falha em .doc legado ou layout complexo" },
+  "untrusted_input": true
+}
