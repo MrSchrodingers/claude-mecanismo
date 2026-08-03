@@ -2,17 +2,68 @@
   "id": "spreadsheet",
   "class": "document",
   "version": "1.0.0",
-  "extensions": [".xlsx", ".xls", ".ods", ".csv", ".tsv"],
-  "probe": { "command": "python3", "args": ["$TOOLS/probe_sheet.py", "$INPUT"], "parse": "json" },
+  "extensions": [
+    ".xlsx",
+    ".xls",
+    ".ods",
+    ".csv",
+    ".tsv"
+  ],
+  "probe": {
+    "command": "python3",
+    "args": [
+      "$TOOLS/probe_sheet.py",
+      "$INPUT"
+    ],
+    "parse": "json"
+  },
   "rationale": "Planilha se le por AGREGACAO primeiro. Despejar linhas em contexto e o erro caro: shape, dtypes e describe cabem em poucas linhas e respondem a maioria das perguntas.",
   "untrusted_input": true,
   "security": "Formula de planilha pode conter payload (DDE, =cmd). Lida como DADO via pandas com data_only; nunca aberta em aplicacao que avalia formula.",
   "plans": [
-    { "id": "profile",
-      "intent": ["summarize", "validate", "compute"],
-      "steps": [ { "op": "profile", "command": "python3", "args": ["$TOOLS/profile_sheet.py", "$INPUT"] } ] },
-    { "id": "query",
-      "intent": ["locate", "extract-entities", "compute"],
-      "steps": [ { "op": "query", "command": "python3", "args": ["$TOOLS/query_sheet.py", "$INPUT", "$TERM"] } ] }
-  ]
+    {
+      "id": "profile",
+      "intent": [
+        "summarize",
+        "validate",
+        "compute"
+      ],
+      "steps": [
+        {
+          "op": "profile",
+          "command": "python3",
+          "args": [
+            "$TOOLS/profile_sheet.py",
+            "$INPUT"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "query",
+      "intent": [
+        "locate",
+        "extract-entities",
+        "compute"
+      ],
+      "steps": [
+        {
+          "op": "query",
+          "command": "python3",
+          "args": [
+            "$TOOLS/query_sheet.py",
+            "$INPUT",
+            "$TERM"
+          ]
+        }
+      ]
+    }
+  ],
+  "requires": {
+    "python_packages": [
+      "pandas>=2",
+      "openpyxl"
+    ],
+    "declare_if_missing": "Sem pandas nao ha perfil nem consulta de planilha. O executor devolve gap; nao infira o conteudo."
+  }
 }

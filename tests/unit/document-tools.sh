@@ -11,6 +11,16 @@ P=0; F=0
 chk(){ if [ "$2" = "$3" ]; then echo "  PASS  $1"; P=$((P+1)); else echo "  FAIL  $1 (got=$2 want=$3)"; F=$((F+1)); fi; }
 T="$(mktemp -d)"; trap 'rm -rf "$T"' EXIT
 
+# PRE-REQUISITO EXPLICITO: sem pandas, seis casos falham com "got=null" e o motivo real fica
+# escondido atras de assercoes de conteudo. Dependencia ausente e lacuna de ambiente, nao
+# defeito do executor - e precisa ser dita como tal.
+if ! python3 -c "import pandas" 2>/dev/null; then
+  echo "  DEPENDENCIA AUSENTE: python3-pandas. Os adaptadores de planilha a declaram em"
+  echo "  execution/adapters/documents/spreadsheet.json (.requires.python_packages)."
+  echo "  Estado: NAO VERIFICADO - a suite nao rodou."
+  exit 2
+fi
+
 python3 - "$T" <<'PY'
 import sys, pandas as pd, random
 random.seed(7); t = sys.argv[1]
