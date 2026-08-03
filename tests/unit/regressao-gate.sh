@@ -157,10 +157,14 @@ DH="$TMP/dryhome/.claude"; mkdir -p "$DH"
 ( cd "$REPO_ROOT" && CLAUDE_HOME="$DH" bash install/apply.sh >/dev/null 2>&1 )
 echo "orfao" > "$DH/hooks/saiu.sh"
 printf 'hooks/saiu.sh\n' >> "$DH/evidence-gate/managed-files.lock"
-dig(){ find "$1" -type f ! -path '*/backups/*' -exec sha256sum {} + 2>/dev/null | sed "s|$1||" | sort -k2 | sha256sum | cut -c1-32; }
+dig(){ find "$1" -type f ! -path '*/backups/*' -exec sha256sum {} + 2>/dev/null | sed "s|$1||" | LC_ALL=C sort -k2 | sha256sum | cut -c1-32; }
 rm -rf "$DH/backups"      # o backup existente veio do apply que preparou o cenario
 ANTES=$(dig "$DH")
-( cd /home/ti/evidence-gate && CLAUDE_HOME="$DH" bash install/apply.sh --dry-run >"$TMP/dry" 2>&1 )
+# EXIT CODE E ASSERCAO: sem ele, um `cd` falho fazia o dry-run nunca rodar e o caso PASSAVA -
+# "estado identico" e trivialmente verdadeiro quando a operacao nao aconteceu. Achado pela CI,
+# que roda noutro caminho e expos o path absoluto que sobrara aqui.
+( cd "$REPO_ROOT" && CLAUDE_HOME="$DH" bash install/apply.sh --dry-run >"$TMP/dry" 2>&1 ); DRC=$?
+chk "o dry-run de fato executou (exit 0)" "$DRC" 0
 DEPOIS=$(dig "$DH")
 chk "estado identico apos --dry-run" "$([ "$ANTES" = "$DEPOIS" ] && echo sim || echo nao)" "sim"
 chk "  o orfao continua no disco" "$([ -f "$DH/hooks/saiu.sh" ] && echo sim || echo nao)" "sim"
@@ -172,7 +176,7 @@ echo
 echo "================ PASS=$P  FAIL=$F ================"
 # CONTAGEM E INVARIANTE, nao descricao. Sem isto, apagar cinco casos deixa PASS=15/FAIL=0 e a
 # suite segue verde - o numero no relatorio viraria documentacao, nao garantia.
-EXPECTED=28
+EXPECTED=29
 if [ "$P" -ne "$EXPECTED" ]; then
   echo "CONTAGEM INESPERADA: PASS=$P, esperado $EXPECTED. Caso removido ou nao executado."
   exit 1
