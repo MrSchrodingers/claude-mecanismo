@@ -23,7 +23,7 @@ jobs:
         with: { fetch-depth: 0 }
       - name: ferramentas dos adaptadores
         run: |
-          python3 -m pip install --quiet 'ruff==0.15.5' 'pandas==2.2.3' 'openpyxl==3.1.5'
+          python3 -m pip install --quiet 'ruff==0.15.5' 'pandas==2.2.3' 'openpyxl==3.1.5' 'pymupdf'
           # pandas/openpyxl: declarados em execution/adapters/documents/spreadsheet.json
           sudo apt-get update -qq && sudo apt-get install -y -qq poppler-utils pandoc
           ruff --version && node --version && jq --version
