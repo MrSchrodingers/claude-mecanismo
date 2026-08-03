@@ -78,6 +78,34 @@ for a in "$ADAPTERS"/*.json; do
 done
 [ "${#APLICAVEIS[@]}" -gt 0 ] || exit 0
 
+# --- G8: comando do REPOSITORIO so executa com aprovacao que PERTENCE A ROOT ---
+# Classe CVE-2025-59536. `.claude/verify.json` vem do repositorio clonado: sem esta trava,
+# abrir um repo hostil daria execucao de comando. A lista de aprovacao vive fora de qualquer
+# repo E precisa ser de root - dono != root significa que o proprio ator pode se auto-aprovar,
+# e ai a aprovacao nao e autoridade, e formalidade. Mutante em tests/unit/run.sh caso 5.
+AVISO_REPO=""
+REPO_VERIFY="$ROOT/.claude/verify.json"
+if [ -f "$REPO_VERIFY" ] && jq -e '.exec.command' "$REPO_VERIFY" >/dev/null 2>&1; then
+  CH="$(sha256sum "$REPO_VERIFY" 2>/dev/null | cut -c1-16)"
+  APPROVED="$HOME/.claude/verify-cmd-approved"
+  OWNER="$(stat -c '%U' "$APPROVED" 2>/dev/null || echo '')"
+  if [ -n "$CH" ] && [ -f "$APPROVED" ] && [ "$OWNER" = "root" ] \
+     && grep -qE "(^|[[:space:]])${CH}([[:space:]]|$)" "$APPROVED" 2>/dev/null; then
+    APLICAVEIS=("$REPO_VERIFY")   # o comando do projeto substitui os analisadores genericos
+  else
+    MOTIVO="nao esta aprovado"
+    [ -z "$CH" ] && MOTIVO="nao pode ser conferido (sha256sum indisponivel) - fail-closed"
+    [ -f "$APPROVED" ] && [ "$OWNER" != "root" ] && [ -n "$CH" ] \
+      && MOTIVO="tem lista de aprovacao pertencente a '$OWNER', nao a root - IGNORADA"
+    AVISO_REPO="
+NOTA: $ROOT/.claude/verify.json existe e $MOTIVO. NAO foi executado.
+Digest: ${CH:-<indisponivel>}
+Se voce LEU o comando e ele e legitimo, o USUARIO aprova (caminho ABSOLUTO: dentro de sudo o
+\$HOME e o de root; apague o arquivo antes se existir com dono errado, porque append nao troca dono):
+  sudo sh -c 'echo \"${CH}  # $(basename "$ROOT")\" >> $HOME/.claude/verify-cmd-approved && chown root:root $HOME/.claude/verify-cmd-approved'"
+  fi
+fi
+
 # --- G3: identidade sobre BYTES do estado avaliado ---
 sha(){ sha256sum 2>/dev/null | cut -c1-32; }
 SNAPSHOT="$( {
@@ -160,13 +188,15 @@ Reprovaram:$FALHAS
 $SAIDA
 ---
 Estado: NOT_VERIFIED. O sinal e externo - nao declare corrigido por auto-avaliacao.
-Este hook nao certifica nada: mesmo passando, o veredito final e da CI sobre o SHA."
+Este hook nao certifica nada: mesmo passando, o veredito final e da CI sobre o SHA.$AVISO_REPO"
 fi
 if [ -n "$LACUNAS" ]; then
   registra "gap" "lacunas:$LACUNAS"
   reporta "GATE - LACUNA DE COBERTURA, nao falha de codigo.$LACUNAS
 Nenhuma verificacao externa cobriu esses caminhos neste turno.
-Estado: NAO VERIFICADO - declare a lacuna ao usuario. Nao diga verde nem vermelho."
+Estado: NAO VERIFICADO - declare a lacuna ao usuario. Nao diga verde nem vermelho.$AVISO_REPO"
 fi
 registra "pass" "verificadores:$ECOS"
+# passou, mas ha comando do repo nao aprovado: avisar sem bloquear
+[ -n "$AVISO_REPO" ] && aviso "GATE - verificadores genericos passaram.$AVISO_REPO"
 exit 0

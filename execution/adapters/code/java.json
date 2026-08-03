@@ -1,0 +1,13 @@
+{
+  "id": "java-analyzer",
+  "ecosystem": "java",
+  "operation_class": "parse",
+  "detect": ["pom.xml", "build.gradle", "build.gradle.kts", "settings.gradle"],
+  "extensions": [".java"],
+  "exec": { "command": "javac", "args": ["-proc:none", "-d", "/dev/null", "-Xlint:none"] },
+  "per_file": true,
+  "declared_effects": { "executes_repository_code": false, "writes_repository": false, "network": false },
+  "rationale": "`javac -proc:none` compila sem rodar annotation processors, que sao codigo do repositorio executado em tempo de compilacao. Saida para /dev/null: nao escreve artefato. `mvn`/`gradle` executam plugins e scripts de build do projeto - ficam em test.",
+  "limits": { "timeout_seconds": 180 },
+  "test": { "command": "mvn", "args": ["-q", "test"], "executes_repository_code": true }
+}

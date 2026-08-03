@@ -1,0 +1,12 @@
+{
+  "id": "dotnet-analyzer",
+  "ecosystem": "dotnet",
+  "operation_class": "analyze",
+  "detect": ["*.sln", "*.csproj", "*.fsproj", "global.json", "Directory.Build.props"],
+  "extensions": [".cs", ".fs", ".csproj"],
+  "exec": { "command": "dotnet", "args": ["format", "--verify-no-changes", "--no-restore"] },
+  "declared_effects": { "executes_repository_code": false, "writes_repository": false, "network": false },
+  "rationale": "`dotnet format --verify-no-changes --no-restore` usa o formatador do Roslyn sobre a arvore sintatica e nao restaura pacotes nem roda MSBuild targets do projeto. `dotnet build` executaria targets e analisadores customizados do repo - isso e execucao e fica em test.",
+  "limits": { "timeout_seconds": 180 },
+  "test": { "command": "dotnet", "args": ["test"], "executes_repository_code": true }
+}
