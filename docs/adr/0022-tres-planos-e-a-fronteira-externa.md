@@ -278,3 +278,56 @@ Na primeira versao, S2 PASSOU sobre o workflow com `pymupdf` sem versao: a class
 do regex continha `\[\]`, o que a invalidava, e nenhum pacote era extraido. Teste que nao ve o
 defeito presente e pior que teste nenhum - foi exatamente assim que o `pymupdf` entrou.
 Corrigido e verificado por mutacao: com a dependencia sem pin, a suite sai 1; restaurada, sai 0.
+
+## Adendo 5 - a distincao que faltava: oraculo x ambiente
+
+Revisao independente encontrou, em S5, a mesma estrutura vacua pela quinta vez nesta sessao:
+
+```
+packaging ausente -> SKIP -> EXPECTED reduzido -> suite verde (4/4), exit 0
+```
+
+Reproduzido antes de corrigir, com um `packaging.py` que lanca ImportError no PYTHONPATH.
+
+A correcao exigiu uma distincao que estava implicita e agora e regra:
+
+| Tipo de pre-requisito | Ausente significa | Tratamento |
+|---|---|---|
+| **Dependencia do ORACULO** (ex.: `packaging` para comparar specifier) | o teste NAO FOI REALIZADO | reprova a suite: `exit 2`, NAO VERIFICADO |
+| **Variacao de AMBIENTE** (ex.: quais locales existem) | uma variante nao pode ser exercitada | `SKIP` explicito, com assercao-guarda exigindo que ao menos uma tenha sido exercitada |
+
+Sem a segunda metade, o SKIP de ambiente recria a mesma estrutura vacua - foi por isso que R1
+ganhou "ao menos um locale de ordenacao distinta foi exercitado".
+
+Correcoes: S5 exige `packaging` (exit 2 se faltar), S6 exige que ele esteja pinado no workflow
+- do contrario a garantia valeria localmente e seria indefinida no ambiente remoto - e
+`EXPECTED=6` fixo, sem reducao dinamica.
+
+Verificado por mutacao: `packaging` ausente -> exit 2; despinado na CI -> exit 1; restaurado -> 0.
+
+### A generalizacao das cinco ocorrencias
+
+```
+precondicao falha -> operacao nao executa -> pos-condicao vacuamente verdadeira -> verde
+```
+
+| # | Onde | O que nao executou |
+|---|---|---|
+| 1 | `--dry-run` | o `cd` falhou; a operacao nao rodou e "estado identico" era trivial |
+| 2 | locale | `LC_ALL=pt_BR` sem o locale instalado; comparava C consigo mesmo |
+| 3 | locale, 2a tentativa | `locale` ECOA o nome pedido mesmo para locale inexistente |
+| 4 | matcher do apt | `apt-get -o ... install` nao casava com `"apt-get install"`; o caso sumiu |
+| 5 | S5 | `packaging` ausente virava SKIP e o esperado encolhia junto |
+
+O contrato completo de um teste nao e `Q(estado_final)`. E:
+
+```
+precondicoes satisfeitas
+  E tratamento efetivamente aplicado
+  E oraculo capaz de discriminar
+  E operacao comprovadamente executada
+  E Q(estado_final)
+```
+
+As defesas construidas, uma por instancia: exit code como assercao (1), discriminador
+comportamental (2, 3), contagem invariante (4), e pre-requisito de oraculo obrigatorio (5).

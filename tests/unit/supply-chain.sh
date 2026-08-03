@@ -54,13 +54,18 @@ fi
 echo "== S5. a CI instala versao COMPATIVEL com o que os adaptadores declaram =="
 # Antes so conferia o NOME: `pandas>=2.2` declarado com `pandas==1.5.0` instalado passava,
 # porque o constraint era removido com sed antes de comparar. Presenca nao e compatibilidade.
+# PRE-REQUISITO DE ORACULO, nao capacidade opcional: sem `packaging` esta assercao nao pode
+# ser avaliada, e a suite inteira precisa reprovar. Ausencia de oraculo e NAO VERIFICADO.
+if ! python3 -c "import packaging.requirements" 2>/dev/null; then
+  echo "  DEPENDENCIA DE ORACULO AUSENTE: python3-packaging."
+  echo "  Sem ela S5 nao pode comparar versao instalada com specifier declarado."
+  echo "  Estado: NAO VERIFICADO - a suite nao foi realizada."
+  exit 2
+fi
 S5="$(python3 - <<'PY'
 import glob, json, re, sys
-try:
-    from packaging.requirements import Requirement
-    from packaging.version import Version
-except Exception:
-    print("SKIP:packaging ausente"); sys.exit(0)
+from packaging.requirements import Requirement
+from packaging.version import Version
 inst = {}
 for wf in glob.glob(".github/workflows/*.yml"):
     for line in open(wf):
@@ -78,14 +83,17 @@ for a in glob.glob("execution/adapters/documents/*.json"):
 print("OK" if not prob else "; ".join(prob))
 PY
 )"
-case "$S5" in
-  SKIP:*) echo "  SKIP  $S5 (nao da para validar specifier)" ;;
-  *)      chk "versao instalada satisfaz o specifier declarado" "$S5" "OK"; P_S5=1 ;;
-esac
+chk "versao instalada satisfaz o specifier declarado" "$S5" "OK"
+
+echo "== S6. a dependencia do proprio ORACULO tambem e pinada na CI =="
+# Sem isto, S5 e obrigatorio localmente e indefinido no ambiente remoto - a garantia teria uma
+# fronteira onde nao se aplica, que e o mesmo defeito com outra forma.
+chk "packaging pinado no workflow" \
+    "$(grep -h "pip install" "$WF"/*.yml | grep -q "'packaging==" && echo sim || echo nao)" "sim"
 
 echo
 echo "================ PASS=$P  FAIL=$F ================"
-EXPECTED=$((4 + ${P_S5:-0}))
+EXPECTED=6   # invariante FIXO: nenhum caso pode sumir reduzindo o esperado
 if [ "$P" -ne "$EXPECTED" ]; then echo "CONTAGEM INESPERADA: PASS=$P, esperado $EXPECTED"; exit 1; fi
 [ "$F" -eq 0 ] && echo "cadeia de suprimentos verde ($P/$EXPECTED)" || echo "cadeia de suprimentos VERMELHA"
 exit $([ "$F" -eq 0 ] && echo 0 || echo 1)

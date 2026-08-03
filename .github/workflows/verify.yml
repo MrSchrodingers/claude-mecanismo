@@ -30,7 +30,8 @@ jobs:
         run: |
           set -euo pipefail
           export DEBIAN_FRONTEND=noninteractive
-          python3 -m pip install --quiet 'ruff==0.15.5' 'pandas==2.2.3' 'openpyxl==3.1.5' 'pymupdf==1.27.1'
+          python3 -m pip install --quiet 'ruff==0.15.5' 'pandas==2.2.3' 'openpyxl==3.1.5' 'pymupdf==1.27.1' 'packaging==25.0'
+          # packaging: dependencia do ORACULO de supply-chain (S5), nao capacidade opcional.
           # pandas/openpyxl/pymupdf: declarados pelos adaptadores em
           # execution/adapters/documents/. Versoes exatas - tag e faixa sao mutaveis, e numa
           # fronteira que decide se um artefato atravessa a entrada precisa ser identificavel.
