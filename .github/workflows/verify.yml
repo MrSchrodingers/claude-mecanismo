@@ -51,7 +51,9 @@ jobs:
             || { echo "manifest.lock desatualizado - rode install/manifest.sh e commite"; exit 1; }
       - name: regressao do gate
         run: bash tests/unit/regressao-gate.sh
-      - name: validacao por mutacao
+      - name: validacao por mutacao (gate)
         run: bash tests/mutation/run.sh
+      - name: validacao por mutacao (instalador)
+        run: bash tests/mutation/install.sh
       - name: suite legada
         run: bash tests/unit/run.sh

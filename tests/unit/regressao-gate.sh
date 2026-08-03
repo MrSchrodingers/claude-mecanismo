@@ -11,6 +11,7 @@
 #   G4 REPROVA - monorepo verificava so o primeiro ecossistema que casava
 set -uo pipefail
 cd "$(dirname "$0")/../.." || exit 1
+REPO_ROOT="$PWD"          # os casos fazem cd; guarde a raiz antes
 GATE="$PWD/evidence/hooks/verify-gate.sh"
 export CLAUDE_ADAPTERS_DIR="$PWD/execution/adapters/code"
 P=0; F=0
@@ -134,12 +135,44 @@ chk "trocar o binario no MESMO path invalida o cache" "$([ "$ENV1" != "$ENV2" ] 
 chk "  e o veredito novo reprova" "$rc" 2
 export CLAUDE_ADAPTERS_DIR="$SALVO2"
 
+echo "== G9. dependencia estrutural: 'git' ausente com .git presente =="
+# G6 cobria so `jq`. Sem este caso, `command -v git || exit 0` seguia fail-open silencioso.
+novo_repo g9
+printf 'def f():\n    return indefinido\n' > quebrado.py; git add -A
+BIN2="$TMP/bin-sem-git"; mkdir -p "$BIN2"
+for b in cat jq sha256sum grep sed sort awk cut date mkdir timeout readlink ruff bash dirname; do
+  p="$(command -v $b 2>/dev/null)" && ln -sf "$p" "$BIN2/$b"
+done
+rc=$(printf '{"stop_hook_active":false}' | PATH="$BIN2" bash "$GATE" >"$TMP/out" 2>"$TMP/err"; echo $?)
+chk "sem git, com .git presente: BARRA" "$rc" 2
+chk "  nomeia a dependencia ausente" "$(grep -q "'git' nao esta no PATH" "$TMP/err" && echo sim || echo nao)" "sim"
+FORA="$TMP/nao-e-repo"; mkdir -p "$FORA"; cd "$FORA"
+rc=$(printf '{"stop_hook_active":false}' | PATH="$BIN2" bash "$GATE" >/dev/null 2>&1; echo $?)
+chk "  fora de repositorio, inerte segue legitimo" "$rc" 0
+
+echo "== G10. --dry-run do instalador NAO altera estado (byte a byte) =="
+# Regressao MEDIDA: a etapa de convergencia rodava `rm -rf` antes de checar DRY, e o modo
+# anunciado como inspecao segura apagou um componente.
+DH="$TMP/dryhome/.claude"; mkdir -p "$DH"
+( cd "$REPO_ROOT" && CLAUDE_HOME="$DH" bash install/apply.sh >/dev/null 2>&1 )
+echo "orfao" > "$DH/hooks/saiu.sh"
+printf 'hooks/saiu.sh\n' >> "$DH/evidence-gate/managed-files.lock"
+dig(){ find "$1" -type f ! -path '*/backups/*' -exec sha256sum {} + 2>/dev/null | sed "s|$1||" | sort -k2 | sha256sum | cut -c1-32; }
+rm -rf "$DH/backups"      # o backup existente veio do apply que preparou o cenario
+ANTES=$(dig "$DH")
+( cd /home/ti/evidence-gate && CLAUDE_HOME="$DH" bash install/apply.sh --dry-run >"$TMP/dry" 2>&1 )
+DEPOIS=$(dig "$DH")
+chk "estado identico apos --dry-run" "$([ "$ANTES" = "$DEPOIS" ] && echo sim || echo nao)" "sim"
+chk "  o orfao continua no disco" "$([ -f "$DH/hooks/saiu.sh" ] && echo sim || echo nao)" "sim"
+chk "  mas o plano ANUNCIA a remocao" "$(grep -q 'REMOVERIA' "$TMP/dry" && echo sim || echo nao)" "sim"
+chk "  e nao cria backup" "$([ -d "$DH/backups" ] && echo nao || echo sim)" "sim"
+
 cd /
 echo
 echo "================ PASS=$P  FAIL=$F ================"
 # CONTAGEM E INVARIANTE, nao descricao. Sem isto, apagar cinco casos deixa PASS=15/FAIL=0 e a
 # suite segue verde - o numero no relatorio viraria documentacao, nao garantia.
-EXPECTED=21
+EXPECTED=28
 if [ "$P" -ne "$EXPECTED" ]; then
   echo "CONTAGEM INESPERADA: PASS=$P, esperado $EXPECTED. Caso removido ou nao executado."
   exit 1

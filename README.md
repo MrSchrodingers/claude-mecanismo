@@ -34,8 +34,9 @@ reprovando. Feedback local, nao trust boundary.
 ## Verificacao
 
 ```
-bash tests/unit/regressao-gate.sh   # 11 casos, cada um reproduz um defeito medido
-bash tests/mutation/run.sh          # remove cada garantia e exige que a suite reprove
+bash tests/unit/regressao-gate.sh   # 28 assercoes em 10 cenarios, cada um de um defeito medido
+bash tests/mutation/run.sh          # 9 mutantes no gate; kill precisa ser atribuivel ao caso-alvo
+bash tests/mutation/install.sh      # 1 mutante no instalador (dry-run destrutivo)
 bash install/verify.sh              # instalado == manifesto?
 ```
 
@@ -50,7 +51,9 @@ bash install/apply.sh       # aplica em ~/.claude, com backup
 bash install/verify.sh      # confere
 ```
 
-`install/apply.sh --dry-run` mostra o que faria sem escrever.
+`install/apply.sh --dry-run` mostra o plano sem escrever, remover ou criar backup - garantia
+coberta pelo caso G10, que compara o digest do diretorio antes e depois byte a byte. Ela foi
+quebrada uma vez: a convergencia por `--prune` rodava `rm -rf` antes de checar o modo.
 
 ## Limites declarados
 

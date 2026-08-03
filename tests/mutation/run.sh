@@ -14,12 +14,12 @@ ORIG="evidence/hooks/verify-gate.sh"
 REG="tests/unit/regressao-gate.sh"
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"; cp -f "$TMP/orig.sh" "$ORIG" 2>/dev/null || true' EXIT
 cp -f "$ORIG" "$TMP/orig.sh"
-P=0; F=0
+P=0; F=0; BASELINE=nao; EXPECTED_MUTANTS=9
 
 # BASELINE: sem isto, uma regressao quebrada por ambiente faria TODOS os mutantes parecerem
 # mortos - o runner reportaria verde justamente quando nao esta testando nada.
 echo "== baseline: a suite precisa passar ANTES de qualquer mutacao =="
-if bash "$REG" >/dev/null 2>&1; then echo "  PASS  baseline verde"; P=$((P+1))
+if bash "$REG" >/dev/null 2>&1; then echo "  PASS  baseline verde"; BASELINE=ok
 else echo "  FAIL  baseline VERMELHO - mutacao nao tem significado; abortando"; exit 1; fi
 echo
 
@@ -81,8 +81,18 @@ mutante M7 "executor nao roda em auto-deteccao" "o motivo e EXECUTAR" \
 mutante M8 "env digest cobre o binario" "invalida o cache" \
   sed -i 's#"$c" "$rp" "$bh" "$vs"#"$c" "$pth" "" ""#' "$ORIG"
 
+# M9 - `git` ausente volta a sair 0 sem olhar .git (G9b)
+mutante M9 "git ausente e lacuna estrutural" "sem git, com .git presente" \
+  sed -i 's|^    if \[ -e "$_d/.git" \]; then|    if false; then|' "$ORIG"
+
 cp -f "$TMP/orig.sh" "$ORIG"
 echo
-echo "================ mortos=$P  sobreviventes=$F ================"
-if [ "$F" -eq 0 ] && [ "$P" -gt 0 ]; then echo "mutacao verde: a suite detecta a perda de cada garantia"; exit 0
-else echo "mutacao VERMELHA: ha garantia que a suite nao protege"; exit 1; fi
+printf 'baseline=%s  mutantes_esperados=%s  mortos=%s  invalidos_ou_sobreviventes=%s\n' \
+       "$BASELINE" "$EXPECTED_MUTANTS" "$P" "$F"
+echo "================================================================"
+# O baseline NAO conta como mutante morto: contava, e o relatorio publicou "9 mortos" para
+# 8 mutantes. Numero derivado errado e exatamente o que este projeto existe para nao fazer.
+if [ "$F" -ne 0 ]; then echo "mutacao VERMELHA: ha garantia que a suite nao protege"; exit 1; fi
+if [ "$P" -ne "$EXPECTED_MUTANTS" ]; then
+  echo "mutacao VERMELHA: $P mortos para $EXPECTED_MUTANTS mutantes - algum nao executou"; exit 1; fi
+echo "mutacao verde: os $EXPECTED_MUTANTS mutantes morreram no caso-alvo correspondente"; exit 0

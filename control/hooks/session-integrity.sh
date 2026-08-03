@@ -27,6 +27,14 @@ OUT="$(cd "$REPO" && bash install/verify.sh 2>&1)"; RC=$?
 # hook nao carregado, SessionStart removido, hook apagado). Sem registro observavel, "nao vi
 # nada" e indistinguivel de "o mecanismo esta morto". O log e a prova de liveness; a ausencia
 # de mensagem ao modelo e so higiene de contexto.
+#
+# LIMITE DA ALEGACAO: ha heartbeat em toda execucao do hook que ULTRAPASSA as precondicoes
+# (jq presente, repo localizado, verify executavel). Nao ha heartbeat quando o hook nem chega
+# a rodar - nao carregado, apagado, ou removido do settings. Portanto:
+#   heartbeat presente  => o hook executou aquela verificacao
+#   heartbeat ausente  =/=> drift  (pode ser observador morto)
+# Detectar a ausencia do proprio observador exige autoridade externa: managed settings, ou
+# `/hooks` e `--debug`. Fase 2.
 HB="$HOME/.claude/evidence/session-integrity.jsonl"
 mkdir -p "$(dirname "$HB")" 2>/dev/null || true
 MANDIG="$(sha256sum "$REPO/install/manifest.lock" 2>/dev/null | cut -c1-16)"

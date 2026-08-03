@@ -17,6 +17,33 @@ MAN="install/manifest.lock"
 DRY=0; [ "${1:-}" = "--dry-run" ] && DRY=1
 
 [ -f "$MAN" ] || bash install/manifest.sh >/dev/null
+
+# DRY-RUN E UM PORTAO, NAO UM FILTRO. A versao anterior filtrava a copia mas caia na etapa de
+# convergencia e chegava a executar `rm -rf` antes de checar DRY - o modo anunciado como
+# inspecao segura apagava componente. Medido: --dry-run removeu o arquivo e o digest do HOME
+# voltou ao estado anterior. Agora tudo que escreve fica DEPOIS deste bloco.
+if [ "$DRY" -eq 1 ]; then
+  echo "== plano (nada sera escrito) =="
+  LOCK_D="$DEST/evidence-gate/managed-files.lock"
+  NOVO_D="$(awk -F"\t" '!/^#/{print $3}' "$MAN")"
+  n=0
+  while IFS=$'\t' read -r tipo origem destino digest; do
+    case "$tipo" in ''|'#'*) continue;; esac
+    if [ -e "$DEST/$destino" ]; then printf '  [dry] atualiza  %s\n' "$destino"
+    else printf '  [dry] instala   %s\n' "$destino"; fi
+    n=$((n+1))
+  done < "$MAN"
+  if [ -f "$LOCK_D" ]; then
+    while IFS= read -r antigo; do
+      [ -n "$antigo" ] || continue
+      printf '%s\n' "$NOVO_D" | grep -qxF "$antigo" && continue
+      [ -e "$DEST/$antigo" ] && printf '  [dry] REMOVERIA %s (saiu do manifesto)\n' "$antigo"
+    done < "$LOCK_D"
+  fi
+  echo "  [dry] $n componentes; nenhuma escrita, remocao ou backup realizados."
+  exit 0
+fi
+
 TS="$(date +%Y%m%d-%H%M%S)"
 BK="$DEST/backups/apply-$TS"
 
@@ -31,7 +58,6 @@ N=0
 while IFS=$'\t' read -r tipo origem destino digest; do
   case "$tipo" in ''|'#'*) continue;; esac
   alvo="$DEST/$destino"
-  if [ "$DRY" -eq 1 ]; then printf '  [dry] %s -> %s\n' "$origem" "$destino"; N=$((N+1)); continue; fi
   mkdir -p "$(dirname "$alvo")"
   if [ -d "$origem" ]; then rm -rf "$alvo"; cp -a "$origem" "$alvo"
   else cp -a "$origem" "$alvo"; [ "${destino%%/*}" = "hooks" ] && chmod +x "$alvo"; fi
@@ -53,7 +79,6 @@ if [ -f "$LOCK" ]; then
   done < "$LOCK"
 fi
 mkdir -p "$(dirname "$LOCK")"; printf '%s\n' "$NOVO" > "$LOCK"
-[ "$DRY" -eq 1 ] && exit 0
 
 # --- registro de hooks no settings.json, preservando as demais chaves ---
 S="$DEST/settings.json"; [ -f "$S" ] || echo '{}' > "$S"

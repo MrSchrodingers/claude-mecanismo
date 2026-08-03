@@ -58,7 +58,22 @@ barra(){ printf '%s\n' "$1" >&2; exit 2; }
 # Quando o runtime ja esta em continuacao forcada, bloquear nao e opcao: avisa.
 reporta(){ if [ "$ACTIVE" = "true" ]; then aviso "$1"; else barra "$1"; fi; }
 
-command -v git >/dev/null 2>&1 || exit 0
+# G9b: `git` ausente tambem e dependencia estrutural. Sem git nao da para usar `rev-parse`,
+# entao a deteccao de "estou num repositorio" e feita subindo a arvore atras de .git (que pode
+# ser diretorio ou arquivo, no caso de worktree/submodulo). Havia .git e nao havia git: sair 0
+# seria dizer verde sobre um repositorio que nunca foi olhado.
+if ! command -v git >/dev/null 2>&1; then
+  _d="$PWD"
+  while [ "$_d" != "/" ] && [ -n "$_d" ]; do
+    if [ -e "$_d/.git" ]; then
+      reporta "GATE - dependencia estrutural ausente: 'git' nao esta no PATH, mas '$_d/.git' existe.
+Nao foi possivel determinar o que mudou. Nenhuma verificacao rodou.
+Estado: NAO VERIFICADO / NOT_VERIFIED."
+    fi
+    _d="$(dirname "$_d")"
+  done
+  exit 0   # fora de repositorio: inerte e legitimo
+fi
 git rev-parse --is-inside-work-tree >/dev/null 2>&1 || exit 0
 ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || exit 0
 [ -n "$ROOT" ] || exit 0
@@ -153,7 +168,9 @@ ENVD="$(for a in "${APLICAVEIS[@]}"; do
           pth="$(command -v "$c" 2>/dev/null || echo absent)"
           if [ "$pth" != "absent" ]; then
             rp="$(readlink -f "$pth" 2>/dev/null || printf '%s' "$pth")"
-            bh="$(sha256sum "$rp" 2>/dev/null | cut -c1-16 || echo '?')"
+            # SHA-256 COMPLETO: truncar em 16 hex daria 64 bits, o que e outra propriedade.
+            # Numa identidade de evidencia nao ha ganho em truncar.
+            bh="$(sha256sum "$rp" 2>/dev/null | cut -d' ' -f1 || echo '?')"
             vs="$(timeout 5 "$c" --version 2>&1 | head -1 || echo '?')"
             printf '%s|%s|%s|%s\n' "$c" "$rp" "$bh" "$vs"
           else printf '%s|absent\n' "$c"; fi

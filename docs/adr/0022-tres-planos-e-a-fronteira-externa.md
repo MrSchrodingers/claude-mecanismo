@@ -161,3 +161,41 @@ nesta sessao que a mutacao encontra teste fraco que a suite verde nao mostrava.
   ou ledger anterior).
 - **Adaptadores de documento sao especificacao versionada, nao mecanismo executado.** Nenhum
   executor os consome: `read-budget.sh` mantem logica propria por extensao.
+
+## Adendo 2 - a garantia nova que quebrou o modo seguro
+
+Segunda revisao independente, sobre o commit `9ddb1fa`. Cinco achados; todos procedentes.
+
+### Critico: `--dry-run` passou a apagar arquivo
+
+Ao adicionar a convergencia (`managed-files.lock`), o bloco de remocao ficou ANTES da checagem
+`[ "$DRY" -eq 1 ] && exit 0`. O modo anunciado como inspecao segura executava `rm -rf`.
+
+Medido antes da correcao, em HOME descartavel:
+
+```
+digest apos adicionar orfao ... a87423aa7c659c48
+DEPOIS do --dry-run .......... a32a09c13da42d79   <- estado alterado
+arquivo orfao FOI APAGADO pelo dry-run
+```
+
+Este defeito e a tese do projeto aplicada a si mesmo: **adicionar uma garantia de convergencia
+nao prova que os demais modos da operacao, em especial o modo declaradamente nao destrutivo,
+preservam a garantia.** Corrigido com portao antes de qualquer escrita, e coberto por G10, que
+compara o digest do diretorio byte a byte, mais o mutante MI1 em `tests/mutation/install.sh`.
+
+### Demais
+
+| # | Defeito | Correcao |
+|---|---|---|
+| G9b | `command -v git \|\| exit 0` seguia fail-open; so `jq` fora corrigido | sobe a arvore atras de `.git` sem usar git; havendo `.git` e faltando git, NOT_VERIFIED |
+| - | contagem publicava "9 mortos" para 8 mutantes: o baseline incrementava o mesmo contador | `BASELINE` separado; `EXPECTED_MUTANTS` como invariante |
+| - | `environment_digest` truncava o sha256 do binario em 16 hex (64 bits), descrito como "sha256 do binario" | hash completo; numa identidade de evidencia nao ha ganho em truncar |
+| - | "heartbeat em toda sessao" era mais forte que o codigo | limite escrito no hook: ha heartbeat em toda execucao que ultrapassa as precondicoes; ausencia nao implica drift |
+
+### Limite que permanece em G10 (executor nao roda sozinho)
+
+A regra confia no valor DECLARADO em `declared_effects.executes_repository_code`. O defeito
+anterior foi exatamente uma declaracao falsa. Logo G10 impede execucao de adaptador
+CORRETAMENTE classificado; nao detecta classificacao errada. Contra isso valem revisao de
+fonte, mutacao e corpus hostil - nao a regra.
