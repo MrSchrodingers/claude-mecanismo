@@ -35,7 +35,28 @@ done
 # Sem isto, um ambiente sem nenhum locale alternativo daria suite verde sem exercitar a
 # propriedade - que e a forma vacua deste mesmo teste.
 chk "ao menos um locale de ordenacao distinta foi exercitado" "$([ "$NAO_C" -ge 1 ] && echo sim || echo nao)" "sim"
-EXPECTED=$((NAO_C + 3))   # locais exercitados + a exigencia acima + R2 + R3
+EXPECTED=$((NAO_C + 5))   # locais exercitados + a exigencia acima + R2 + R3
+
+echo "== R4. o contrato de subagente e invariante ao locale =="
+# Reproduzido: `y/.../.../` opera sobre caracteres e sob LC_ALL=C o sed processa bytes, entao a
+# normalizacao de acentos nao acontecia e o hook barrava retorno legitimo em PT-BR. O defeito do
+# ADR 0018 reaparecendo por outra via - agora dependente do ambiente, nao do padrao.
+CONTRATO="$PWD/evidence/hooks/subagent-contract.sh"
+RET='RESULTADO: corrigido.
+EVIDÊNCIA: verify.sh:12, `bash x.sh` exit=0
+RISCOS-PENDÊNCIAS: nenhuma
+PROPAGAÇÃO: nenhuma'
+paga(){ printf '{"transcript_path":"%s","subagent_type":"tdd"}' "$1"; }
+TR="$T/tr.jsonl"
+python3 - "$TR" "$RET" <<'PY'
+import json, sys
+open(sys.argv[1], "w").write(json.dumps({"type":"assistant","message":{"role":"assistant",
+    "content":[{"type":"text","text":sys.argv[2]}]}}) + "\n")
+PY
+for L in C en_US.UTF-8; do
+  rc=$(paga "$TR" | LC_ALL="$L" bash "$CONTRATO" >/dev/null 2>&1; echo $?)
+  chk "retorno acentuado ACEITO sob LC_ALL=$L" "$rc" 0
+done
 
 echo "== R2. o manifesto e invariante sob ordem de leitura do filesystem =="
 # Duas geracoes seguidas no mesmo estado devem coincidir byte a byte.

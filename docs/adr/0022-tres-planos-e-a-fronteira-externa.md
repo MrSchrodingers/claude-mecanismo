@@ -331,3 +331,38 @@ precondicoes satisfeitas
 
 As defesas construidas, uma por instancia: exit code como assercao (1), discriminador
 comportamental (2, 3), contagem invariante (4), e pre-requisito de oraculo obrigatorio (5).
+
+## Adendo 6 - o drift documental e o defeito que ele revelou
+
+O README afirmava "28 assercoes" com a suite em 29. Pequeno operacionalmente, e a MESMA classe
+que originou o projeto: narrativa em copia separada do mecanismo, afastando-se sem sinal.
+
+A correcao nao foi corrigir o numero - foi parar de duplica-lo. `scripts/status.sh` gera
+`docs/status.generated.md` a partir de execucao real; o README referencia. `--check` reprova se
+o arquivo committado estiver desatualizado, e a CI roda esse check.
+
+### O que o status gerado encontrou no primeiro uso
+
+O script exporta `LC_ALL=C` (identidade nao pode depender de locale, ADR/adendo 3). Sob essa
+variavel, `tests/unit/run.sh` reprovou 2 casos que passavam sem ela:
+
+```
+PASS  aceita EVIDENCIA acentuada (PT-BR reprovava 25%)     <- sem LC_ALL
+FAIL  aceita EVIDENCIA acentuada (PT-BR reprovava 25%)     <- LC_ALL=C
+```
+
+Causa: `subagent-contract.sh` normalizava acentos com `sed 'y/.../.../'`, que opera sobre
+CARACTERES. Sob `LC_ALL=C` o sed processa BYTES, a transliteracao multi-byte nao acontece, e o
+hook voltava a barrar retorno legitimo em PT-BR.
+
+E o defeito do ADR 0018 reaparecendo por outra via: la o padrao era ASCII e o texto acentuado;
+aqui a normalizacao existe mas depende do ambiente. **Em produção isso e falso bloqueio**: uma
+sessao com locale C rejeitaria todo retorno de subagente com acento.
+
+Corrigido com substituicao LITERAL por byte (`s/Ê/E/g` casa uma sequencia fixa, insensivel a
+locale). Regressao R4 exercita o contrato sob `LC_ALL=C` e `en_US.UTF-8`; mutante removendo a
+normalizacao de um unico caractere reprova a suite.
+
+Registro do metodo: este defeito nao foi encontrado por leitura nem por revisao. Apareceu
+porque um script novo rodou a suite existente sob uma variavel diferente. Terceira vez na
+sessao em que **mudar o ambiente** revelou o que o ambiente unico escondia.

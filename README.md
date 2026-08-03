@@ -34,9 +34,13 @@ reprovando. Feedback local, nao trust boundary.
 ## Verificacao
 
 ```
-bash tests/unit/regressao-gate.sh   # 28 assercoes em 10 cenarios, cada um de um defeito medido
-bash tests/mutation/run.sh          # 9 mutantes no gate; kill precisa ser atribuivel ao caso-alvo
-bash tests/mutation/install.sh      # 1 mutante no instalador (dry-run destrutivo)
+bash tests/unit/regressao-gate.sh   # cada caso reproduz um defeito medido
+bash tests/unit/document-tools.sh   # executor documental, ponta a ponta
+bash tests/unit/supply-chain.sh     # pinagem do gate externo
+bash tests/unit/reprodutibilidade.sh# metamorfico: identidade invariante ao ambiente
+bash tests/mutation/run.sh          # kill precisa ser atribuivel ao caso-alvo
+bash tests/mutation/install.sh      # mutante do instalador
+bash scripts/status.sh              # regenera docs/status.generated.md
 bash install/verify.sh              # instalado == manifesto?
 ```
 
@@ -54,6 +58,11 @@ bash install/verify.sh      # confere
 `install/apply.sh --dry-run` mostra o plano sem escrever, remover ou criar backup - garantia
 coberta pelo caso G10, que compara o digest do diretorio antes e depois byte a byte. Ela foi
 quebrada uma vez: a convergencia por `--prune` rodava `rm -rf` antes de checar o modo.
+
+Contagens, componentes e limites vivem em [`docs/status.generated.md`](docs/status.generated.md),
+gerado por `scripts/status.sh` a partir de execucao real. Este README nao duplica numeros: ele
+ja divergiu do mecanismo uma vez (afirmava 28 assercoes com a suite em 29), e narrativa em copia
+separada se afasta sem sinal - a classe de defeito que originou este projeto.
 
 ## Limites declarados
 

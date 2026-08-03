@@ -55,7 +55,23 @@ fi
 # A correcao NAO e adicionar a variante acentuada de uma palavra - isso repetiria o erro na
 # proxima (PROPAGACAO, RISCOS...). Normaliza-se o texto ANTES de casar, e todos os padroes
 # passam a ser ASCII por construcao.
-NORM="$(printf '%s' "$LAST" | sed 'y/ÁÀÂÃÄÉÈÊËÍÌÎÏÓÒÔÕÖÚÙÛÜÇÑáàâãäéèêëíìîïóòôõöúùûüçñ/AAAAAEEEEIIIIOOOOOUUUUCNaaaaaeeeeiiiiooooouuuucn/')"
+#
+# SEGUNDA CORRECAO (2026-08-03): `y/.../.../` opera sobre CARACTERES, e sob LC_ALL=C o sed
+# processa BYTES - a transliteracao multi-byte quebra e o texto sai intacto. Resultado: o hook
+# voltava a reprovar retorno acentuado, agora dependendo do locale do ambiente. Reproduzido:
+# `LC_ALL=C bash tests/unit/run.sh` reprovava 2 casos que passavam sem a variavel.
+# Substituicao LITERAL por byte e insensivel a locale: cada `s///` casa uma sequencia fixa.
+NORM="$(printf '%s' "$LAST" | sed \
+  -e 's/Á/A/g' -e 's/À/A/g' -e 's/Â/A/g' -e 's/Ã/A/g' -e 's/Ä/A/g' \
+  -e 's/É/E/g' -e 's/È/E/g' -e 's/Ê/E/g' -e 's/Ë/E/g' \
+  -e 's/Í/I/g' -e 's/Ì/I/g' -e 's/Î/I/g' -e 's/Ï/I/g' \
+  -e 's/Ó/O/g' -e 's/Ò/O/g' -e 's/Ô/O/g' -e 's/Õ/O/g' -e 's/Ö/O/g' \
+  -e 's/Ú/U/g' -e 's/Ù/U/g' -e 's/Û/U/g' -e 's/Ü/U/g' -e 's/Ç/C/g' -e 's/Ñ/N/g' \
+  -e 's/á/a/g' -e 's/à/a/g' -e 's/â/a/g' -e 's/ã/a/g' -e 's/ä/a/g' \
+  -e 's/é/e/g' -e 's/è/e/g' -e 's/ê/e/g' -e 's/ë/e/g' \
+  -e 's/í/i/g' -e 's/ì/i/g' -e 's/î/i/g' -e 's/ï/i/g' \
+  -e 's/ó/o/g' -e 's/ò/o/g' -e 's/ô/o/g' -e 's/õ/o/g' -e 's/ö/o/g' \
+  -e 's/ú/u/g' -e 's/ù/u/g' -e 's/û/u/g' -e 's/ü/u/g' -e 's/ç/c/g' -e 's/ñ/n/g')"
 # =============================================================================
 
 MISS=""

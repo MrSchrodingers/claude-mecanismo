@@ -85,6 +85,8 @@ jobs:
         run: bash tests/unit/document-tools.sh
       - name: reprodutibilidade (metamorfico)
         run: bash tests/unit/reprodutibilidade.sh
+      - name: status gerado reflete a execucao
+        run: bash scripts/status.sh --check
       - name: regressao do gate
         run: bash tests/unit/regressao-gate.sh
       - name: validacao por mutacao (gate)
