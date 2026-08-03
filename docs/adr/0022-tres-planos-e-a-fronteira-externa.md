@@ -242,3 +242,39 @@ receita e o executor.
 - **Benchmark pareado.** Os testes provam que o mecanismo funciona e reduz bytes; nao provam
   que a resposta final melhora. Comparar "leitura direta" com "pipeline" exige corpus.
 - **OCR e transcricao** seguem como lacunas declaradas.
+
+## Adendo 4 - a regra que eu mesmo reintroduzi
+
+Revisao automatica de commit acusou `unpinned-dep-in-security-gate` em
+`.github/workflows/verify.yml`. Confirmado: `pymupdf` sem versao.
+
+E reincidencia. Numa rodada pinei `actions/checkout` por SHA, `ubuntu-24.04`, `ruff`, `pandas` e
+`openpyxl`; na rodada seguinte acrescentei `pymupdf` sem versao. Terceira ocorrencia da mesma
+classe nesta sessao:
+
+| # | Defeito | Classe |
+|---|---|---|
+| 1 | adaptador .NET declarava `executes_repository_code: false` | afirmacao sem conferir a fonte |
+| 2 | `spreadsheet.json` perdeu a declaracao de dependencias | capacidade afirmada sem declarar o que exige |
+| 3 | `pymupdf` sem versao no gate externo | regra propria nao aplicada ao proprio acrescimo |
+
+O padrao e o mesmo: a regra existia, estava escrita, e nao foi executada no acrescimo seguinte.
+Enunciar nao executa. Por isso a correcao NAO foi pinar o `pymupdf` - foi transformar a regra
+em teste.
+
+`tests/unit/supply-chain.sh`, 5 assercoes:
+
+- S1 toda action pinada por SHA de 40 caracteres, nunca por tag (tag e mutavel);
+- S2 todo pacote pip com `==`;
+- S3 `runs-on` e imagem nomeada, nunca `-latest`;
+- S4 dependencia de sistema nao pinada precisa de `EXCECAO DECLARADA` por escrito - `apt` no
+  runner nao tem pinagem estavel, e fixar versao desligaria o gate por ruido a cada atualizacao
+  da imagem; a garantia vem da imagem nomeada mais o registro das versoes observadas no log;
+- S5 todo pacote que um adaptador declara em `.requires` e instalado pela CI.
+
+### O teste tambem nasceu quebrado
+
+Na primeira versao, S2 PASSOU sobre o workflow com `pymupdf` sem versao: a classe de caracteres
+do regex continha `\[\]`, o que a invalidava, e nenhum pacote era extraido. Teste que nao ve o
+defeito presente e pior que teste nenhum - foi exatamente assim que o `pymupdf` entrou.
+Corrigido e verificado por mutacao: com a dependencia sem pin, a suite sai 1; restaurada, sai 0.

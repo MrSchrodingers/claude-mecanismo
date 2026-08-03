@@ -23,9 +23,18 @@ jobs:
         with: { fetch-depth: 0 }
       - name: ferramentas dos adaptadores
         run: |
-          python3 -m pip install --quiet 'ruff==0.15.5' 'pandas==2.2.3' 'openpyxl==3.1.5' 'pymupdf'
-          # pandas/openpyxl: declarados em execution/adapters/documents/spreadsheet.json
+          python3 -m pip install --quiet 'ruff==0.15.5' 'pandas==2.2.3' 'openpyxl==3.1.5' 'pymupdf==1.27.1'
+          # pandas/openpyxl/pymupdf: declarados pelos adaptadores em
+          # execution/adapters/documents/. Versoes exatas - tag e faixa sao mutaveis, e numa
+          # fronteira que decide se um artefato atravessa a entrada precisa ser identificavel.
+          #
+          # EXCECAO DECLARADA - apt NAO pinado: fixar versao de pacote apt quebra a cada
+          # atualizacao da imagem do runner, e o resultado seria o gate desligado por ruido em
+          # vez de por decisao. A garantia aqui vem de `runs-on: ubuntu-24.04` (imagem nomeada,
+          # nao -latest) mais o registro da versao observada no proprio log, abaixo.
           sudo apt-get update -qq && sudo apt-get install -y -qq poppler-utils pandoc
+          echo "versoes de sistema observadas nesta execucao:"
+          pdftotext -v 2>&1 | head -1; pandoc --version | head -1
           ruff --version && node --version && jq --version
       - name: sintaxe de todo hook
         run: |
@@ -51,6 +60,8 @@ jobs:
           bash install/manifest.sh install/manifest.check >/dev/null
           diff -u install/manifest.lock install/manifest.check \
             || { echo "manifest.lock desatualizado - rode install/manifest.sh e commite"; exit 1; }
+      - name: cadeia de suprimentos
+        run: bash tests/unit/supply-chain.sh
       - name: executor documental
         run: bash tests/unit/document-tools.sh
       - name: reprodutibilidade (metamorfico)
