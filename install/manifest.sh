@@ -13,7 +13,10 @@ emit(){ # $1=tipo $2=origem $3=destino
   local d
   if [ -d "$2" ]; then
     # diretorio (skill): digest do conteudo ordenado, para detectar qualquer alteracao interna
-    d="$(find "$2" -type f -exec sha256sum {} + 2>/dev/null | sort -k2 | sha256sum | cut -c1-64)"
+    # caminho NORMALIZADO (relativo a raiz do diretorio) para que o digest do repositorio e o
+    # do instalado sejam comparaveis contra o MESMO valor do manifesto. Antes, verify.sh tinha
+    # de recalcular a origem e comparava instalado<->working tree, deixando o manifesto de fora.
+    d="$(cd "$2" && find . -type f -exec sha256sum {} + 2>/dev/null | sort -k2 | sha256sum | cut -c1-64)"
   else
     d="$(sha256sum "$2" 2>/dev/null | cut -c1-64)"
   fi

@@ -21,6 +21,21 @@ REPO="${EVIDENCE_GATE_REPO:-$HOME/claude-mecanismo}"
 [ -x "$REPO/install/verify.sh" ] || exit 0
 
 OUT="$(cd "$REPO" && bash install/verify.sh 2>&1)"; RC=$?
+
+# HEARTBEAT: silencio nao prova conformidade - prova apenas ausencia de mensagem. Este hook sai
+# 0 calado em pelo menos seis cenarios (jq ausente, repo nao localizado, verify nao executavel,
+# hook nao carregado, SessionStart removido, hook apagado). Sem registro observavel, "nao vi
+# nada" e indistinguivel de "o mecanismo esta morto". O log e a prova de liveness; a ausencia
+# de mensagem ao modelo e so higiene de contexto.
+HB="$HOME/.claude/evidence/session-integrity.jsonl"
+mkdir -p "$(dirname "$HB")" 2>/dev/null || true
+MANDIG="$(sha256sum "$REPO/install/manifest.lock" 2>/dev/null | cut -c1-16)"
+jq -cn --arg t "$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null)" \
+       --arg r "$([ "$RC" -eq 0 ] && echo conformant || echo drift)" \
+       --arg m "${MANDIG:-unknown}" --arg s "$(printf '%s' "$OUT" | grep -E '^conformidade:' | head -1)" \
+       '{ts:$t,event:"session_integrity",result:$r,manifest_digest:$m,summary:$s,policy:"user"}' \
+  >> "$HB" 2>/dev/null || true
+
 [ "$RC" -eq 0 ] && exit 0
 
 RESUMO="$(printf '%s' "$OUT" | grep -E '^conformidade:' | head -1)"

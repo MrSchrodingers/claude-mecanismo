@@ -16,17 +16,33 @@ TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"; cp -f "$TMP/orig.sh" "$ORIG" 2>/dev/nul
 cp -f "$ORIG" "$TMP/orig.sh"
 P=0; F=0
 
-mutante(){ # $1=nome  $2=descricao da garantia removida  $3..=comandos sed
-  local nome="$1" desc="$2"; shift 2
+# BASELINE: sem isto, uma regressao quebrada por ambiente faria TODOS os mutantes parecerem
+# mortos - o runner reportaria verde justamente quando nao esta testando nada.
+echo "== baseline: a suite precisa passar ANTES de qualquer mutacao =="
+if bash "$REG" >/dev/null 2>&1; then echo "  PASS  baseline verde"; P=$((P+1))
+else echo "  FAIL  baseline VERMELHO - mutacao nao tem significado; abortando"; exit 1; fi
+echo
+
+mutante(){ # $1=nome  $2=descricao  $3=caso-alvo que DEVE reprovar  $4..=comandos sed
+  local nome="$1" desc="$2" alvo="$3"; shift 3
   cp -f "$TMP/orig.sh" "$ORIG"
   "$@"
-  if ! bash -n "$ORIG" 2>/dev/null; then
-    echo "  SKIP  $nome (mutante nao compila - sed nao casou)"; cp -f "$TMP/orig.sh" "$ORIG"; return
+  if cmp -s "$TMP/orig.sh" "$ORIG"; then
+    echo "  FAIL  $nome NAO FOI APLICADO - o padrao do sed nao casa com o codigo atual."
+    echo "        Mutante nao aplicado nao e mutante sobrevivente: e teste invalido."
+    F=$((F+1)); cp -f "$TMP/orig.sh" "$ORIG"; return
   fi
-  if bash "$REG" >/dev/null 2>&1; then
+  if ! bash -n "$ORIG" 2>/dev/null; then
+    echo "  FAIL  $nome nao compila apos a mutacao (sed casou mal)"; F=$((F+1)); cp -f "$TMP/orig.sh" "$ORIG"; return
+  fi
+  local out; out="$(bash "$REG" 2>&1)"
+  if [ $? -eq 0 ]; then
     echo "  FAIL  $nome SOBREVIVEU - a suite passa sem a garantia: $desc"; F=$((F+1))
+  elif printf '%s' "$out" | grep -q "FAIL.*$alvo"; then
+    echo "  PASS  $nome morto pelo caso certo ($alvo)"; P=$((P+1))
   else
-    echo "  PASS  $nome morto (suite reprovou ao remover: $desc)"; P=$((P+1))
+    # Suite reprovou, mas nao pelo caso que protege esta garantia: kill por acidente.
+    echo "  FAIL  $nome: suite reprovou, mas NAO em '$alvo' - kill nao atribuivel"; F=$((F+1))
   fi
   cp -f "$TMP/orig.sh" "$ORIG"
 }
@@ -34,24 +50,36 @@ mutante(){ # $1=nome  $2=descricao da garantia removida  $3..=comandos sed
 echo "== mutacao do gate: cada garantia removida DEVE quebrar a regressao =="
 
 # M1 - cache aceita qualquer veredito, nao so `pass` (era o false-green do throttle)
-mutante M1 "so veredito 'pass' e reutilizavel" \
+mutante M1 "so veredito 'pass' e reutilizavel" "CONTINUA barrando" \
   sed -i 's/= "pass" \]; then/= "pass" ] || true; then/' "$ORIG"
 
 # M2 - avisar por stderr+exit 0 em vez de additionalContext (canal inerte, ADR 0021)
-mutante M2 "additionalContext como canal de aviso" \
+mutante M2 "additionalContext como canal de aviso" "additionalContext" \
   sed -i 's|^aviso(){ jq -cn|aviso(){ printf "%s\\n" "$1" >\&2; exit 0; }\nunused_aviso(){ jq -cn|' "$ORIG"
 
 # M3 - identidade por NOME em vez de bytes (nao ve conteudo de untracked)
-mutante M3 "identidade sobre bytes do arquivo" \
+mutante M3 "identidade sobre bytes do arquivo" "untracked reprova" \
   sed -i 's|printf .%s %s\\n. "$f" "$(sha256sum "$ROOT/$f" 2>/dev/null \| cut -d. . -f1)"|printf "%s\\n" "$f"|' "$ORIG"
 
 # M4 - para no primeiro adaptador aplicavel (ponto cego de monorepo)
-mutante M4 "conjuncao sobre TODOS os adaptadores" \
-  sed -i 's|APLICAVEIS+=("$a"); ECOS="$ECOS $(jq -r ..ecosystem // "?". "$a")"; break|APLICAVEIS=("$a"); break 2|' "$ORIG"
+mutante M4 "conjuncao sobre TODOS os adaptadores" "nao mascara" \
+  sed -i 's|^      break$|      break 2|' "$ORIG"
 
 # M5 - tabela ausente sai 0 em silencio (inercia silenciosa)
-mutante M5 "fail-closed quando a tabela some" \
+mutante M5 "fail-closed quando a tabela some" "tabela vazia BARRA" \
   sed -i 's|^  reporta "GATE - tabela de adaptadores|  exit 0 # MUTANTE\n  reporta "GATE - tabela de adaptadores|' "$ORIG"
+
+# M6 - dependencia estrutural ausente volta a sair 0 em silencio (G9)
+mutante M6 "jq ausente e lacuna, nao sucesso" "sem jq em repo git" \
+  sed -i 's|^    printf .%s. "$INPUT" . grep -q ..stop_hook_active|    exit 0 # MUTANTE\n    printf "%s" "$INPUT" \| grep -q '"'"'"stop_hook_active|' "$ORIG"
+
+# M7 - adaptador que executa codigo do repo volta a rodar em auto-deteccao (G10)
+mutante M7 "executor nao roda em auto-deteccao" "o motivo e EXECUTAR" \
+  sed -i 's|if \[ "$(jq -r ..declared_effects.executes_repository_code // false. "$a")" = "true" \]; then|if false; then|' "$ORIG"
+
+# M8 - env digest volta a ser so o caminho do binario (G11)
+mutante M8 "env digest cobre o binario" "invalida o cache" \
+  sed -i 's#"$c" "$rp" "$bh" "$vs"#"$c" "$pth" "" ""#' "$ORIG"
 
 cp -f "$TMP/orig.sh" "$ORIG"
 echo

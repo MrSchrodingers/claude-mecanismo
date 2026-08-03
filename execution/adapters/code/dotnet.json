@@ -1,12 +1,14 @@
 {
   "id": "dotnet-analyzer",
   "ecosystem": "dotnet",
-  "operation_class": "analyze",
+  "operation_class": "execute",
   "detect": ["*.sln", "*.csproj", "*.fsproj", "global.json", "Directory.Build.props"],
   "extensions": [".cs", ".fs", ".csproj"],
   "exec": { "command": "dotnet", "args": ["format", "--verify-no-changes", "--no-restore"] },
-  "declared_effects": { "executes_repository_code": false, "writes_repository": false, "network": false },
-  "rationale": "`dotnet format --verify-no-changes --no-restore` usa o formatador do Roslyn sobre a arvore sintatica e nao restaura pacotes nem roda MSBuild targets do projeto. `dotnet build` executaria targets e analisadores customizados do repo - isso e execucao e fica em test.",
+  "declared_effects": { "executes_repository_code": true, "writes_repository": false, "network": false },
+  "rationale": "CORRIGIDO 2026-08-03 apos verificacao na fonte primaria. A versao anterior deste arquivo declarava executes_repository_code=false, o que e FALSO: a documentacao oficial da Microsoft adverte que `dotnet format` 'may restore, compile, and run analyzers from the specified project or solution. Only invoke the tool against trusted code.' `--no-restore` suprime apenas o restore implicito - nao a compilacao nem os analisadores do projeto, que sao codigo do repositorio. Logo este adaptador NAO roda em auto-deteccao.",
+  "source": "https://learn.microsoft.com/en-us/dotnet/core/tools/dotnet-format",
+  "analyzer_gap": "Nao ha, neste conjunto, analisador de C#/F# que comprovadamente nao execute codigo do projeto. A lacuna e DECLARADA em vez de contornada: repositorio .NET recebe aviso de cobertura ausente, nao verde falso.",
   "limits": { "timeout_seconds": 180 },
   "test": { "command": "dotnet", "args": ["test"], "executes_repository_code": true }
 }

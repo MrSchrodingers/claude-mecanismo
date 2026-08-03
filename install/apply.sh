@@ -38,6 +38,21 @@ while IFS=$'\t' read -r tipo origem destino digest; do
   N=$((N+1))
 done < "$MAN"
 echo "componentes instalados: $N"
+
+# CONVERGENCIA: apply(desired, installed) tem de resultar em installed == desired. Sem isto,
+# componente removido do manifesto continuava instalado e ativo, e rodar apply de novo NAO
+# resolvia o drift que o verify apontava. Remove apenas o que ESTE instalador gerenciou antes -
+# nunca arquivo desconhecido em ~/.claude, que pode pertencer a outro sistema.
+LOCK="$DEST/evidence-gate/managed-files.lock"
+NOVO="$(awk -F"\t" '!/^#/{print $3}' "$MAN")"
+if [ -f "$LOCK" ]; then
+  while IFS= read -r antigo; do
+    [ -n "$antigo" ] || continue
+    printf '%s\n' "$NOVO" | grep -qxF "$antigo" && continue
+    if [ -e "$DEST/$antigo" ]; then rm -rf "${DEST:?}/$antigo"; echo "  removido (saiu do manifesto): $antigo"; fi
+  done < "$LOCK"
+fi
+mkdir -p "$(dirname "$LOCK")"; printf '%s\n' "$NOVO" > "$LOCK"
 [ "$DRY" -eq 1 ] && exit 0
 
 # --- registro de hooks no settings.json, preservando as demais chaves ---

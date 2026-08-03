@@ -17,13 +17,13 @@ permissions:
   contents: read
 jobs:
   verify:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4 pinado: tag e mutavel
         with: { fetch-depth: 0 }
       - name: ferramentas dos adaptadores
         run: |
-          python3 -m pip install --quiet ruff
+          python3 -m pip install --quiet 'ruff==0.15.5'
           ruff --version && node --version && jq --version
       - name: sintaxe de todo hook
         run: |

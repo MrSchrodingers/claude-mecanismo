@@ -111,3 +111,53 @@ contador persistente, timeout externo.
 Se `~/.claude` nao fosse o escopo efetivo - por exemplo, se plugins instalados sobrescrevessem
 os hooks em tempo de execucao. A precedencia entre `~/.claude/hooks` e `~/.claude/plugins/` nao
 foi verificada com `/hooks` nem `--debug`.
+
+## Adendo 2026-08-03 - achados de revisao independente
+
+Revisao externa do estado publicado encontrou oito defeitos. Todos verificados; sete corrigidos.
+
+### Regressao de seguranca minha, confirmada na fonte primaria
+
+O adaptador .NET declarava `executes_repository_code: false` sobre `dotnet format
+--verify-no-changes --no-restore`. A documentacao da Microsoft adverte o contrario:
+
+> `dotnet format` **may restore, compile, and run analyzers** from the specified project or
+> solution. **Only invoke the tool against trusted code.**
+
+`--no-restore` suprime apenas o restore implicito - nao a compilacao nem os analisadores, que
+sao codigo do repositorio. Escrevi a justificativa sem conferir a fonte: e o terceiro erro
+desta classe no projeto, sob vigilancia nominal da regra que existe para impede-lo.
+
+Corrigido como REGRA GERAL, nao caso especial (G10): adaptador que declara
+`executes_repository_code: true` nunca roda em auto-deteccao - vira lacuna declarada.
+
+### Demais correcoes
+
+| # | Defeito | Correcao |
+|---|---|---|
+| G9 | `jq`/`git` ausentes saiam 0 em silencio - a mesma inercia que G7 combate, no caminho mais critico | dependencia estrutural ausente e NOT_VERIFIED; fora de repo git, inerte segue legitimo |
+| G11 | `environment_digest` hasheava so o CAMINHO do binario; troca do executavel no mesmo path preservava o `pass` em cache | inclui realpath, sha256 do binario e string de versao |
+| - | `apply.sh` nao removia componente que saiu do manifesto: `apply` nao convergia para `desired` | `managed-files.lock`; remove apenas o que ele mesmo gerenciou, nunca arquivo desconhecido |
+| - | skills eram conferidas contra a working tree, deixando o manifesto fora do circuito | digest com caminho normalizado; `REPO-DRIFT` distinguido de `installation drift` |
+| - | contagem de casos era descritiva: apagar cinco testes mantinha a suite verde | `EXPECTED` como invariante |
+| - | mutante era considerado morto por qualquer reprovacao, e `sed` que nao casava virava "sobreviveu" | baseline obrigatorio; kill precisa ser atribuivel ao caso-alvo; mutante nao aplicado e FALHA |
+| - | CI usava `actions/checkout@v4`, `ubuntu-latest` e ruff sem versao - tags mutaveis numa fronteira de evidencia | action pinada por SHA completo, `ubuntu-24.04`, `ruff==0.15.5` |
+
+O mutante M7 sobreviveu a primeira tentativa e revelou que o caso G7 nao distinguia "lacuna por
+ser executor" de "lacuna por binario ausente" - assercao especifica adicionada. Segunda vez
+nesta sessao que a mutacao encontra teste fraco que a suite verde nao mostrava.
+
+### Nao corrigido, e por que
+
+- **`.claude/verify.json` aprovado ainda SUBSTITUI os analisadores genericos** em vez de somar.
+  A formula real e `Pass(v_repo,x)` quando aprovado, nao a conjuncao. E override semantico
+  deliberado (o projeto sabe o que verificar), mas estava descrito como conjuncao irrestrita.
+- **A aprovacao cobre o digest de `verify.json`, nao o conteudo transitivo.** Aprovar
+  `{"command":"bash","args":["scripts/verify.sh"]}` autoriza um script que pode mudar depois.
+  A aprovacao significa "confio que este repositorio execute sua suite", nao "confirmei os
+  bytes que rodarao". Solucao real e sandbox, nao aprovacao.
+- **Commit local sem upstream nao e verificado**: `git diff HEAD` e untracked ficam vazios apos
+  commit, e sem `@{u}` nao ha base. Exige definir a base (merge-base, commit inicial da sessao
+  ou ledger anterior).
+- **Adaptadores de documento sao especificacao versionada, nao mecanismo executado.** Nenhum
+  executor os consome: `read-budget.sh` mantem logica propria por extensao.

@@ -81,8 +81,68 @@ chk "  em continuacao forcada, avisa por additionalContext" \
     "$(jq -re '.hookSpecificOutput.additionalContext' "$TMP/out" >/dev/null 2>&1 && echo sim || echo nao)" "sim"
 export CLAUDE_ADAPTERS_DIR="$SALVO"
 
+echo "== G6. dependencia ESTRUTURAL ausente e lacuna, nao sucesso silencioso =="
+# Ferramenta de adaptador ausente ja virava lacuna; a do proprio gate saia 0 calada.
+novo_repo g6
+printf 'def f():\n    return indefinido\n' > quebrado.py; git add -A
+BIN="$TMP/bin-sem-jq"; mkdir -p "$BIN"
+for b in cat git sha256sum grep sed sort awk cut date mkdir timeout readlink ruff bash; do
+  p="$(command -v $b 2>/dev/null)" && ln -sf "$p" "$BIN/$b"
+done
+rc=$(PATH="$BIN" printf '{"stop_hook_active":false}' | PATH="$BIN" bash "$GATE" >"$TMP/out" 2>"$TMP/err"; echo $?)
+chk "sem jq em repo git: BARRA em vez de sair 0" "$rc" 2
+chk "  nomeia a dependencia ausente" "$(grep -q "jq" "$TMP/err" && echo sim || echo nao)" "sim"
+rc=$(PATH="$BIN" printf '{"stop_hook_active":true}' | PATH="$BIN" bash "$GATE" >/dev/null 2>&1; echo $?)
+chk "  em continuacao forcada, nao trava a sessao" "$rc" 0
+
+echo "== G7. adaptador que EXECUTA codigo do repo nao roda em auto-deteccao =="
+# A doc da Microsoft adverte que `dotnet format` compila e roda analisadores do projeto.
+novo_repo g7
+printf '<Project Sdk="Microsoft.NET.Sdk"></Project>\n' > App.csproj
+printf 'class P { static void Main() {} }\n' > Program.cs; git add -A
+rc=$(gate false)
+chk "repo .NET nao passa em silencio" "$rc" 2
+chk "  declara LACUNA (nao falha de codigo)" "$(grep -q 'LACUNA DE COBERTURA' "$TMP/err" && echo sim || echo nao)" "sim"
+chk "  nomeia o ecossistema" "$(grep -q 'dotnet' "$TMP/err" && echo sim || echo nao)" "sim"
+# Sem esta assercao o caso passa mesmo com a garantia removida: o adaptador entraria na
+# execucao e a lacuna viria de 'dotnet nao esta no PATH', que e outro motivo. Achado por M7.
+chk "  o motivo e EXECUTAR codigo do repo, nao binario ausente" \
+    "$(grep -q 'declara executar codigo do repositorio' "$TMP/err" && echo sim || echo nao)" "sim"
+
+echo "== G8. identidade do AMBIENTE cobre o binario, nao so o caminho =="
+# Cache `pass` nao pode sobreviver a troca do verificador no mesmo path.
+novo_repo g8
+FAKEBIN="$TMP/fake"; mkdir -p "$FAKEBIN"
+printf '#!/bin/sh\n[ "$1" = "--version" ] && { echo "fakelint 1.0"; exit 0; }\nexit 0\n' > "$FAKEBIN/fakelint"
+chmod +x "$FAKEBIN/fakelint"
+ADT="$TMP/adap"; mkdir -p "$ADT"
+jq -n '{id:"fake",ecosystem:"fake",operation_class:"parse",extensions:[".fk"],
+        exec:{command:"fakelint",args:["check"]},
+        declared_effects:{executes_repository_code:false,writes_repository:false,network:false},
+        rationale:"fixture", limits:{timeout_seconds:10}}' > "$ADT/fake.json"
+echo "conteudo" > alvo.fk
+rm -f "$HOME/.claude/evidence"/*.jsonl   # isola o ledger deste caso
+SALVO2="$CLAUDE_ADAPTERS_DIR"; export CLAUDE_ADAPTERS_DIR="$ADT"; export PATH="$FAKEBIN:$PATH"
+rc=$(gate false); chk "primeira execucao aprova" "$rc" 0
+LED="$HOME/.claude/evidence"; ENV1=$(cat "$LED"/*.jsonl 2>/dev/null | tail -1 | jq -r '.env')
+# mesmo caminho, binario DIFERENTE (versao nova)
+printf '#!/bin/sh\n[ "$1" = "--version" ] && { echo "fakelint 2.0"; exit 0; }\nexit 1\n' > "$FAKEBIN/fakelint"
+chmod +x "$FAKEBIN/fakelint"
+rc=$(gate false)
+ENV2=$(cat "$LED"/*.jsonl 2>/dev/null | tail -1 | jq -r '.env')
+chk "trocar o binario no MESMO path invalida o cache" "$([ "$ENV1" != "$ENV2" ] && echo sim || echo nao)" "sim"
+chk "  e o veredito novo reprova" "$rc" 2
+export CLAUDE_ADAPTERS_DIR="$SALVO2"
+
 cd /
 echo
 echo "================ PASS=$P  FAIL=$F ================"
-[ "$F" -eq 0 ] && echo "regressao do gate verde" || echo "regressao do gate VERMELHA"
+# CONTAGEM E INVARIANTE, nao descricao. Sem isto, apagar cinco casos deixa PASS=15/FAIL=0 e a
+# suite segue verde - o numero no relatorio viraria documentacao, nao garantia.
+EXPECTED=21
+if [ "$P" -ne "$EXPECTED" ]; then
+  echo "CONTAGEM INESPERADA: PASS=$P, esperado $EXPECTED. Caso removido ou nao executado."
+  exit 1
+fi
+[ "$F" -eq 0 ] && echo "regressao do gate verde ($P/$EXPECTED)" || echo "regressao do gate VERMELHA"
 exit $([ "$F" -eq 0 ] && echo 0 || echo 1)

@@ -30,8 +30,21 @@
 #      projeto inteiro combate.
 set -uo pipefail
 
-command -v jq >/dev/null 2>&1 || exit 0
-INPUT="$(cat)"
+INPUT="$(</dev/stdin)"   # builtin: `cat` seria mais uma dependencia externa no caminho critico
+# G9: DEPENDENCIA ESTRUTURAL ausente e LACUNA, nao sucesso. Ferramenta de adaptador ausente ja
+# virava lacuna (G6); ferramenta do proprio gate saia 0 em silencio - a mesma inercia que G7
+# combate, no lugar mais critico. Fora de repositorio git, inerte e legitimo: nao ha o que verificar.
+if ! command -v jq >/dev/null 2>&1; then
+  if command -v git >/dev/null 2>&1 && git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    # sem jq nao ha como emitir additionalContext; em continuacao forcada resta sair.
+    printf '%s' "$INPUT" | grep -q '"stop_hook_active"[[:space:]]*:[[:space:]]*true' && exit 0
+    { echo "GATE - dependencia estrutural ausente: 'jq' nao esta no PATH."
+      echo "O verificador nao pode ler o evento nem emitir contexto. Nada foi verificado."
+      echo "Estado: NAO VERIFICADO / NOT_VERIFIED."; } >&2
+    exit 2
+  fi
+  exit 0
+fi
 ACTIVE="$(printf '%s' "$INPUT" | jq -r '.stop_hook_active // false' 2>/dev/null)"
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)"
@@ -66,17 +79,32 @@ Defina CLAUDE_ADAPTERS_DIR ou rode install/apply.sh."
 fi
 
 # --- G4: TODO adaptador cuja extensao foi tocada e aplicavel (nao so o primeiro) ---
-APLICAVEIS=(); ECOS=""
+APLICAVEIS=(); ECOS=""; EXECUTORES=""
 for a in "$ADAPTERS"/*.json; do
   [ -f "$a" ] || continue
   while IFS= read -r ext; do
     [ -z "$ext" ] && continue
     if printf '%s\n' "$CHANGED" | grep -q -- "${ext}\$"; then
-      APLICAVEIS+=("$a"); ECOS="$ECOS $(jq -r '.ecosystem // "?"' "$a")"; break
+      # G10: adaptador que DECLARA executar codigo do repositorio nunca roda automaticamente.
+      # Pago com um defeito proprio: o adaptador .NET declarava executes_repository_code=false
+      # sobre `dotnet format`, e a documentacao da Microsoft adverte que ele "may restore,
+      # compile, and run analyzers... Only invoke the tool against trusted code."
+      if [ "$(jq -r '.declared_effects.executes_repository_code // false' "$a")" = "true" ]; then
+        EXECUTORES="$EXECUTORES
+  - $(jq -r '.id' "$a") ($(jq -r '.ecosystem' "$a")): declara executar codigo do repositorio; exige aprovacao"
+      else
+        APLICAVEIS+=("$a"); ECOS="$ECOS $(jq -r '.ecosystem // "?"' "$a")"
+      fi
+      break
     fi
   done < <(jq -r '.extensions[]? // empty' "$a" 2>/dev/null)
 done
-[ "${#APLICAVEIS[@]}" -gt 0 ] || exit 0
+if [ "${#APLICAVEIS[@]}" -eq 0 ]; then
+  [ -n "$EXECUTORES" ] && reporta "GATE - LACUNA DE COBERTURA: nenhum analisador seguro para o que mudou.$EXECUTORES
+Nenhuma verificacao rodou. Estado: NAO VERIFICADO / NOT_VERIFIED.
+Adaptador que executa codigo do repositorio so roda sob aprovacao explicita."
+  exit 0
+fi
 
 # --- G8: comando do REPOSITORIO so executa com aprovacao que PERTENCE A ROOT ---
 # Classe CVE-2025-59536. `.claude/verify.json` vem do repositorio clonado: sem esta trava,
@@ -117,8 +145,18 @@ SNAPSHOT="$( {
     done
   } | sha )"
 VERIFIERS="$(for a in "${APLICAVEIS[@]}"; do cat "$a"; done | sha)"
+# G11: identidade do AMBIENTE, nao do caminho. Hash so do path nao muda quando o binario e
+# atualizado ou substituido no mesmo lugar - e ai um `pass` em cache sobrevive a troca do
+# verificador. Inclui realpath, digest do executavel e a string de versao.
 ENVD="$(for a in "${APLICAVEIS[@]}"; do
-          c="$(jq -r '.exec.command' "$a")"; printf '%s=%s\n' "$c" "$(command -v "$c" 2>/dev/null || echo absent)"
+          c="$(jq -r '.exec.command' "$a")"
+          pth="$(command -v "$c" 2>/dev/null || echo absent)"
+          if [ "$pth" != "absent" ]; then
+            rp="$(readlink -f "$pth" 2>/dev/null || printf '%s' "$pth")"
+            bh="$(sha256sum "$rp" 2>/dev/null | cut -c1-16 || echo '?')"
+            vs="$(timeout 5 "$c" --version 2>&1 | head -1 || echo '?')"
+            printf '%s|%s|%s|%s\n' "$c" "$rp" "$bh" "$vs"
+          else printf '%s|absent\n' "$c"; fi
         done | sha)"
 # G3/G1: sem sha256sum a identidade e vazia e casaria com tudo -> fail-closed.
 if [ -z "$SNAPSHOT" ] || [ -z "$VERIFIERS" ]; then

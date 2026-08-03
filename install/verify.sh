@@ -30,8 +30,14 @@ while IFS=$'\t' read -r tipo origem destino digest; do
     printf '  AUSENTE   %-42s (declarado, nao instalado)\n' "$destino"; MISSING=$((MISSING+1)); continue
   fi
   if [ -d "$alvo" ]; then
-    atual="$(find "$alvo" -type f -exec sha256sum {} + 2>/dev/null | sed "s| $alvo/| |" | sort -k2 | sha256sum | cut -c1-64)"
-    esper="$(find "$origem" -type f -exec sha256sum {} + 2>/dev/null | sed "s| $origem/| |" | sort -k2 | sha256sum | cut -c1-64)"
+    # O MANIFESTO e a autoridade, tambem para diretorio. Comparar instalado contra a working
+    # tree deixava o manifesto fora do circuito: repo drift passava despercebido localmente.
+    atual="$(cd "$alvo" && find . -type f -exec sha256sum {} + 2>/dev/null | sort -k2 | sha256sum | cut -c1-64)"
+    esper="$digest"
+    fonte="$(cd "$origem" && find . -type f -exec sha256sum {} + 2>/dev/null | sort -k2 | sha256sum | cut -c1-64)"
+    if [ "$fonte" != "$digest" ]; then
+      printf '  REPO-DRIFT %-40s (working tree != manifesto; rode install/manifest.sh)\n' "$destino"; DRIFT=$((DRIFT+1)); continue
+    fi
   else
     atual="$(sha256sum "$alvo" 2>/dev/null | cut -c1-64)"; esper="$digest"
   fi
