@@ -54,9 +54,30 @@ if [ "${EVIDENCE_GATE_LOCK:-}" != "held" ]; then
     else
       # Sem `.git` gravavel (export por tarball, worktree somente-leitura): cai para o
       # temporario. LIMITE DECLARADO: aqui a exclusao volta a depender de $TMPDIR coincidir.
-      _lk_file="${TMPDIR:-/tmp}/evidence-gate-$(printf '%s' "$_lk_root" | sha256sum | cut -c1-16).lock"
+      #
+      # SYMLINK (auditoria de 2026-08-04): o nome do arquivo e derivado de sha256(caminho do
+      # repo) - deterministico e publico. Como `exec 9>"$f"` TRUNCA e SEGUE symlink, outro
+      # usuario com escrita no diretorio podia plantar um link e fazer o lock zerar um arquivo
+      # alheio. Medido: arquivo de 43 bytes truncado para 0.
+      # Correcao: o lock passa a viver num diretorio PROPRIO, 0700, dono o usuario corrente -
+      # ninguem mais consegue criar entradas la dentro. Se o diretorio ja existir com outro
+      # dono ou modo frouxo, o fallback e RECUSADO em vez de usado: um lock que outro usuario
+      # controla nao e lock.
+      _lk_dir="${TMPDIR:-/tmp}/evidence-gate-$(id -u)"
+      mkdir -p -m 700 "$_lk_dir" 2>/dev/null || true
+      if [ ! -d "$_lk_dir" ] || [ "$(stat -c '%u:%a' "$_lk_dir" 2>/dev/null)" != "$(id -u):700" ]; then
+        echo "AVISO: '$_lk_dir' nao e um diretorio 0700 do usuario corrente - fallback de lock" >&2
+        echo "       RECUSADO. As suites rodam SEM protecao contra corrida (lacuna declarada)." >&2
+        _lk_file=""
+      else
+        _lk_file="$_lk_dir/$(printf '%s' "$_lk_root" | sha256sum | cut -c1-16).lock"
+      fi
     fi
-    if ! exec 9>"$_lk_file"; then
+    if [ -z "$_lk_file" ]; then
+      :   # fallback recusado acima; o aviso ja foi emitido
+    elif [ -L "$_lk_file" ]; then
+      echo "AVISO: '$_lk_file' e um symlink - lock RECUSADO (nao truncamos alvo alheio)." >&2
+    elif ! exec 9>"$_lk_file"; then
       echo "AVISO: nao foi possivel abrir o lock em '$_lk_file' - seguindo sem protecao." >&2
     elif ! flock -n 9; then
       {

@@ -54,6 +54,32 @@ if [ "$DRY" -eq 0 ]; then
   echo "backup: $BK"
 fi
 
+# CONFINAMENTO DE CAMINHO - o furo gemeo do que a auditoria de 2026-08-04 achou em
+# `apply-managed.sh`. Aqui a escrita e do USUARIO, nao de root, entao nao ha escalada de
+# privilegio; mas o alvo e `~/.claude`, isto e, OS PROPRIOS HOOKS QUE CONSTITUEM A POLITICA, e
+# `rm -rf "$alvo"` com `destino` hostil apaga fora de `$DEST`. Corrigir so o instalador managed
+# deixaria a mesma classe aberta no caminho que roda todo dia.
+# Rejeita e ABORTA - nao saneia: caminho hostil saneado deixa duvida sobre o que sobrou.
+confinado(){ # $1=candidato $2=raiz
+  local c r
+  c="$(realpath -m "$1" 2>/dev/null)" || return 1
+  r="$(realpath -m "$2" 2>/dev/null)" || return 1
+  case "$c" in "$r"|"$r"/*) return 0 ;; *) return 1 ;; esac
+}
+RUINS=0
+while IFS=$'\t' read -r tipo origem destino digest; do
+  case "$tipo" in ''|'#'*) continue;; esac
+  case "$destino" in ""|/*|../*|*/../*|*/..|"..") echo "  DESTINO INVALIDO: [$destino]"; RUINS=$((RUINS+1)); continue;; esac
+  case "$origem"  in ""|/*|../*|*/../*|*/..|"..") echo "  ORIGEM INVALIDA: [$origem]";  RUINS=$((RUINS+1)); continue;; esac
+  confinado "$DEST/$destino" "$DEST" || { echo "  DESTINO ESCAPA DE $DEST: [$destino]"; RUINS=$((RUINS+1)); }
+  confinado "$PWD/$origem" "$PWD"    || { echo "  ORIGEM ESCAPA DO REPO: [$origem]";    RUINS=$((RUINS+1)); }
+done < "$MAN"
+if [ "$RUINS" -ne 0 ]; then
+  echo "ERRO: manifesto rejeitado - caminho fora dos limites. NADA foi instalado." >&2
+  echo "      Regenere com 'bash install/manifest.sh' e inspecione o diff." >&2
+  exit 1
+fi
+
 N=0
 while IFS=$'\t' read -r tipo origem destino digest; do
   case "$tipo" in ''|'#'*) continue;; esac

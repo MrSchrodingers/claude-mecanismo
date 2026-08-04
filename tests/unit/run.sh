@@ -149,12 +149,20 @@ echo $(( $(date +%s) + 3600 )) > "$HL/.claude/$SENT"
 R=$(HOME="$HL" bash -c "printf '%s' '{\"tool_name\":\"Agent\",\"tool_input\":{\"model\":\"$MODEL_X\"}}' | bash '$G'" 2>/dev/null; echo $?)
 chk "NEGA sentinela nao pertencente a root" "$R" 2
 S="$EVID/subagent-contract.sh"
+# Os quatro blocos, e nao dois: a mensagem do hook cobra RESULTADO/EVIDENCIA/RISCOS/
+# PROPAGACAO desde sempre, mas o codigo so conferia os dois primeiros. A auditoria mediu um
+# retorno com metade do contrato saindo 0. Alinhado fortalecendo o mecanismo, nao afrouxando
+# a mensagem.
 OK='RESULTADO: ok
-EVIDENCIA: a.py:1; pytest -> exit 0'
+EVIDENCIA: a.py:1; pytest -> exit 0
+RISCOS: nenhum
+PROPAGACAO: nenhuma'
 R=$(run "$(jq -nc --arg m "$OK" '{hook_event_name:"SubagentStop",agent_type:"refutador",last_assistant_message:$m}')" "$S")
 chk "contrato aceita retorno com ancora" "$R" 0
 ACC='RESULTADO: ok
-EVIDÊNCIA: a.py:1; pytest -> exit 0'
+EVIDÊNCIA: a.py:1; pytest -> exit 0
+RISCOS-PENDÊNCIAS: nenhuma
+PROPAGAÇÃO: nenhuma'
 R=$(run "$(jq -nc --arg m "$ACC" '{hook_event_name:"SubagentStop",agent_type:"refutador",last_assistant_message:$m}')" "$S")
 chk "  aceita EVIDENCIA acentuada (PT-BR reprovava 25%)" "$R" 0
 R=$(run "$(jq -nc --arg m "tudo certo, pode seguir" '{hook_event_name:"SubagentStop",agent_type:"refutador",last_assistant_message:$m}')" "$S")
@@ -188,7 +196,7 @@ PROPAGACAO: nenhuma.'
 R=$(run "$(jq -nc --arg m "$CMD" '{hook_event_name:"SubagentStop",agent_type:"refutador",last_assistant_message:$m}')" "$S")
 chk "  aceita comando FORA da antiga allowlist (xxd)" "$R" 0
 NV='RESULTADO: nao consegui executar a suite.
-EVIDENCIA: nao verificado - pytest ausente neste ambiente.
+EVIDENCIA: NAO VERIFICADO - pytest ausente neste ambiente.
 RISCOS: a alegacao segue sem lastro.
 PROPAGACAO: nenhuma.'
 R=$(run "$(jq -nc --arg m "$NV" '{hook_event_name:"SubagentStop",agent_type:"refutador",last_assistant_message:$m}')" "$S")
@@ -199,6 +207,40 @@ RISCOS: nenhum.
 PROPAGACAO: nenhuma.'
 R=$(run "$(jq -nc --arg m "$VAZ" '{hook_event_name:"SubagentStop",agent_type:"refutador",last_assistant_message:$m}')" "$S")
 chk "  BARRA blocos completos SEM ancora (discriminador da ancora)" "$R" 2
+# --- AUDITORIA 2026-08-04: tres passagens vacuas medidas no oraculo, e meio contrato nao
+# conferido. Cada caso abaixo REPROVAVA como 0 antes da correcao.
+Q4=$'\nRISCOS: nenhum.\nPROPAGACAO: nenhuma.'
+c2(){ run "$(jq -nc --arg m "$1" '{hook_event_name:"SubagentStop",agent_type:"refutador",last_assistant_message:$m}')" "$S"; }
+# `\$ ` em qualquer posicao casava moeda: em PT-BR `R$ ` e notacao corrente, nao prompt.
+chk "  BARRA cifrao de MOEDA como ancora (R\$ 500 mil)" \
+    "$(c2 "RESULTADO: revisei.
+EVIDENCIA: o custo do incidente foi de R\$ 500 mil, sem verificacao.$Q4")" 2
+# o regex antigo nao tinha polaridade: a frase NEGADA afirmava verificacao e passava.
+chk "  BARRA 'nada ficou nao verificado' (afirma o oposto)" \
+    "$(c2 "RESULTADO: revisei tudo.
+EVIDENCIA: nada ficou nao verificado, revisei por leitura atenta.$Q4")" 2
+# o pior: a mensagem de bloqueio continha a frase-chave, entao ecoar o erro era um bypass.
+chk "  BARRA o ECO da propria mensagem de bloqueio do hook" \
+    "$(c2 "RESULTADO: ok
+EVIDENCIA: Se nao conseguiu obter evidencia, diga isso em EVIDENCIA - 'nao verificado' e resposta valida.$Q4")" 2
+chk "  ACEITA o token NAO VERIFICADO em caixa alta" \
+    "$(c2 "RESULTADO: nao rodei a suite.
+EVIDENCIA: NAO VERIFICADO - pytest ausente neste ambiente.$Q4")" 0
+# prompt de shell ANCORADO no inicio da linha continua sendo ancora legitima
+chk "  ACEITA prompt de shell no inicio da linha" \
+    "$(c2 "RESULTADO: ok
+EVIDENCIA:
+\$ pytest
+2 passed$Q4")" 0
+# metade do contrato nao e o contrato
+chk "  BARRA retorno sem RISCOS" \
+    "$(c2 'RESULTADO: ok
+EVIDENCIA: a.py:1
+PROPAGACAO: nenhuma')" 2
+chk "  BARRA retorno sem PROPAGACAO" \
+    "$(c2 'RESULTADO: ok
+EVIDENCIA: a.py:1
+RISCOS: nenhum')" 2
 O="$EXEC/output-budget.sh"
 # acima do limite de 12.000 B, senao o hook sai 0 sem emitir e o teste reprova um hook correto
 BIG=$(python3 -c "print('\n'.join(f'linha de saida numero {i} com texto suficiente' for i in range(500)))")

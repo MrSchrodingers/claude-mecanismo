@@ -205,3 +205,129 @@ Rodar o binario de verdade; rodar sob outro locale; rodar duas vezes ao mesmo te
 um plugin a mais; gerar variantes de formatacao; mutar a garantia. Leitura atenta do mesmo
 codigo, pela mesma pessoa que o escreveu, encontrou zero deles - inclusive nas passagens onde a
 regra violada estava escrita no comentario logo acima.
+
+---
+
+## Adendo - a revisao independente sobre o proprio diff desta sessao
+
+Antes de fechar, o diff foi submetido a `revisor-codigo` e `auditor-seguranca` em contexto
+separado, com scanner executado. **Onze achados procedentes**, cinco deles criticos - todos
+sobre codigo escrito NESTA sessao, boa parte dele sobre as proprias correcoes acima.
+
+O dado que organiza este adendo: a suite estava **verde com todos os onze abertos**. Isso nao
+e contradicao, e o ponto - nenhum dos onze tinha caso de teste, porque quem escreveu o codigo
+escreveu tambem os testes, e ambos herdaram a mesma suposicao.
+
+### Critico: a raiz de confianca era instalada a partir de entrada nao confiavel
+
+`install/manifest.lock` e um arquivo do REPOSITORIO, isto e, esta dentro do espaco de escrita
+do ator governado. Suas colunas `origem` e `destino` eram usadas VERBATIM como caminho de
+`mkdir -p`, `cp -f` e `rm -rf`, e o instalador roda como ROOT. Medido:
+
+```
+destino = ../../../ZONA/vitima.conf   -> arquivo FORA do prefixo sobrescrito
+destino = ../../../ZONA  (origem=dir) -> `rm -rf` destruiu o diretorio FORA do prefixo
+origem  = /etc/hostname               -> copiaria arquivo de fora do repo, com modo alargado
+```
+
+Sob `sudo`: escrita e remocao arbitrarias como root a partir de dado que o ator controla. A
+inversao exata da tese do projeto. E o digest do manifesto nao protegia - ele e calculado sobre
+o MESMO working tree que deveria proteger, e a conformidade comparava o arquivo copiado com o
+valor que o proprio atacante escreveu. Detector de drift contra `~/.claude`, jamais controle de
+integridade sobre o repositorio; a distincao passou despercebida ate a auditoria.
+
+Corrigido com portao de confinamento antes da primeira escrita, nos DOIS instaladores - o furo
+gemeo em `install/apply.sh` roda como usuario, mas seu alvo sao os proprios hooks da politica.
+
+### Critico: o portao contava divergencia e nunca populacao
+
+Com o conjunto de politica VAZIO, o laco de copia nao copia nada, a conformidade nao itera
+nada, e `0 divergentes` era lido como aprovacao. `--enforce` gravava `allowManagedHooksOnly:
+true` apontando para 14 caminhos inexistentes: o mecanismo inteiro de hooks desligado com
+aparencia de ligado - a armadilha que o proprio arquivo dizia tratar. Gatilho realista: qualquer
+normalizacao de whitespace no manifesto.
+
+`MG6` nao pegava, e a razao importa: ele sabota UMA entrada (`div=1`); nao esvazia o conjunto.
+**Ausencia de divergencia num conjunto vazio e vacuamente verdadeira** - a mesma forma logica
+perseguida desde o ADR 0022, agora dentro do portao construido para impedi-la.
+
+### Critico: `--revert` apagava politica de terceiro
+
+O comentario prometia "Remove SOMENTE o que este script cria". O codigo apagava QUALQUER
+`managed-settings.json` - inclusive politica corporativa de outra ferramenta, que pode conter
+`permissions.deny` - sem backup, sem aviso, sob `sudo`. A marca `_managed_by` ja existia e era
+consultada no ramo de backup, nao no de remocao.
+
+### Critico: o gerador da politica aceitava injecao de JSON
+
+`sed "s|@BASE@|$BASE|g"` sobre o texto do JSON: um valor com aspas FECHA a string e ABRE objeto
+novo, e o resultado continua sendo JSON valido - de modo que o `jq -e .` do consumidor nao
+barra. Esse documento vira politica em `/etc/claude-code/`. Trocado por `jq --arg`, que nunca
+reparseia o valor.
+
+### Critico: o oraculo da ancora trocou falso bloqueio por falso verde
+
+**A condicao de refutacao escrita neste proprio ADR foi satisfeita.** A correcao da secao 3
+abriu passagens vacuas, medidas:
+
+| Contraexemplo | Alternativa que casava | Estado |
+|---|---|---|
+| `o custo foi de R$ 500 mil` | `\$ ` em qualquer posicao | corrigido (ancorado no inicio da linha) |
+| `nada ficou nao verificado` | escape sem polaridade nem caixa | corrigido (token `NAO VERIFICADO` em caixa alta) |
+| eco da mensagem de bloqueio do hook | idem | corrigido - o portao publicava a propria chave |
+| `a doc em exemplo.com:8080 descreve` | `arquivo.ext:linha` | **ABERTO, declarado** |
+| `pela leitura, o hook faz exit 2` | `exit <digito>` | **ABERTO, declarado** |
+
+Os dois ultimos nao sao patchaveis por regex, e insistir seria trocar este falso aceite por
+outro falso bloqueio - foi assim que o defeito de producao nasceu. `host.tld:porta` e
+`arquivo.ext:linha` sao lexicalmente identicos; citar um exit code tem a mesma forma de
+reportar um. **O limite passa a ser escrito no hook e em `evidence/claims/C-009.yaml`:** o
+oraculo distingue texto COM FORMA de evidencia de texto sem forma; nao distingue REPORTAR de
+MENCIONAR.
+
+E havia um agravante de outra ordem: o comentario do hook e a claim C-009 afirmavam validacao
+contra "corpus de 15 casos - 9 positivos, 6 negativos". **Esse corpus viveu no rascunho de quem
+escreveu a correcao e nunca entrou em `tests/`.** Afirmacao de cobertura inexistente, dentro do
+ledger de evidencia. Corrigida em ambos, e o mecanismo que a pegou foi o proprio validador,
+quando as claims passaram a citar mutantes que ainda nao existiam.
+
+### Setima instancia do padrao vacuo, no verificador da fase 2
+
+`--verify` imprimia `0 gravaveis pelo ator` sob prefixo de ensaio, onde essa checagem NAO
+EXECUTA - ela e guardada por `REAL=1`. A suite lia esse veredito como aprovacao da garantia
+central da fase 2. Agora o modo de ensaio declara `NAO VERIFICADO` e nao afirma "fora do espaco
+de escrita do ator".
+
+### O que permanece ABERTO, e nao foi corrigido nesta sessao
+
+- **Base de comparacao com remoto de outro nome.** `verify-gate.sh` procura
+  `origin/{HEAD,main,master}`; num fork cujo remoto se chama `upstream`, ou com default
+  `develop`, a base cai para arvore vazia e o gate passa a acusar codigo JA PUBLICADO. Medido:
+  dois repositorios identicos, diferindo so no nome do remoto, dao `exit=2` e `exit=0`. E
+  falso positivo, e falso positivo e o que faz o operador desligar o gate. `C-008` declara o
+  limite como "verifica mais do que o necessario, nunca menos" - formalmente verdadeiro,
+  severidade subdimensionada.
+- **`tests/unit/claims.sh` L5b sobrevive a remocao da guarda que diz testar.** Removida
+  `RE_SHA` de `commit_existe`, a suite segue verde: `git cat-file -e` recusa a opcao sozinho.
+  O teste mede o parser do git, nao a guarda. `RE_SHA` fica como defesa em profundidade sem
+  bypass demonstrado, e o TESTE e que esta errado.
+- **A politica managed executa `install/verify.sh` do espaco do ator.** `session-integrity.sh`
+  roda `cd $EVIDENCE_GATE_REPO && bash install/verify.sh`, e esse env e gravado pelo proprio
+  `managed-settings.json` root-owned apontando para o clone no home. `verify.sh` nao e
+  componente do manifesto, logo nao vai para `/opt`. O ator faz o proprio auditor sair 0.
+  Corrigir exige promover `verify.sh` e o manifesto a componentes managed.
+- **Copia antes da conformidade.** O portao de confinamento precede a primeira escrita, mas a
+  copia para `$OPT` ainda precede a checagem de digest: um repositorio com drift sobrescreve a
+  politica VIVA antes de reprovar. Correcao: estagiar em `$OPT.new` e trocar por `mv` atomico.
+- **`--verify` nao mede posse em nenhum caminho executavel**: exige `REAL=1`, que exige root.
+
+### O que este adendo demonstra sobre o metodo
+
+Onze achados procedentes sobre codigo escrito horas antes, por quem tambem escreveu os testes
+que o cobriam - e a suite verde o tempo inteiro. As correcoes desta sessao criaram tres dos
+cinco criticos.
+
+A conclusao operacional nao e "revisar mais". E que **revisao com CONTEXTO SEPARADO e ferramenta
+que executa acha o que o autor nao pode achar**, porque o ponto cego do autor esta nos testes
+tanto quanto no codigo. O `refutador` como portao final nao substitui isso: chega tarde demais
+para reescrever o corpus.

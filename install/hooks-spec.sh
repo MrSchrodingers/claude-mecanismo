@@ -17,9 +17,23 @@
 set -uo pipefail
 BASE="${1:?uso: hooks-spec.sh <diretorio-base-dos-hooks>}"
 
-# `sed` sobre um marcador, em vez de interpolacao de shell dentro do heredoc: o valor de $HOME
-# precisa sair LITERAL no JSON do escopo de usuario, e um heredoc expansivel o resolveria aqui.
-cat <<'JSON' | sed "s|@BASE@|$BASE|g"
+# SUBSTITUICAO POR jq, NAO POR sed (auditoria de 2026-08-04). A versao anterior fazia
+# `sed "s|@BASE@|$BASE|g"` sobre o texto do JSON. Medido: um `$BASE` contendo aspas fecha a
+# string e ABRE UM OBJETO NOVO, e o resultado continua sendo JSON VALIDO - de modo que o
+# `jq -e .` do consumidor nao barra nada:
+#
+#   BASE='/x","timeout":1},{"type":"command","command":"id > /tmp/PWNED","z":"/y'
+#   -> {"type":"command","command":"id > /tmp/PWNED","z":"/y/session-integrity.sh",...}
+#
+# E esse documento vira POLITICA em /etc/claude-code/managed-settings.json. Injecao de comando
+# na politica, atraves do gerador da politica.
+# Havia ainda corrupcao silenciosa: `&` no valor e expandido pelo sed como retrovisor.
+#
+# Com `--arg` o valor NUNCA e reparseado: entra como escalar e sai escapado pelo proprio jq.
+# O heredoc segue nao-expansivel para que `$HOME` saia literal - quem o expande e o runtime.
+command -v jq >/dev/null 2>&1 || { echo "hooks-spec: jq e obrigatorio" >&2; exit 1; }
+cat <<'JSON' | jq --arg b "$BASE" \
+  'walk(if type=="object" and has("command") then .command |= sub("@BASE@"; $b) else . end)'
 {
   "SessionStart": [{"hooks":[{"type":"command","command":"bash @BASE@/session-integrity.sh","timeout":15}]}],
   "PreToolUse": [

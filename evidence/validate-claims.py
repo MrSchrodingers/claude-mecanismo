@@ -142,6 +142,13 @@ def valida(doc, arquivo, regressoes, mutantes, raiz, vistos):
         ok = commit_existe(raiz, str(escopo["commit"]))
         if ok is False:
             erro(f"scope.commit '{escopo['commit']}' nao existe neste repositorio")
+        elif ok is None:
+            # ASSIMETRIA CORRIGIDA: `pyyaml` ausente ja saia 2 (NAO VERIFICADO), mas `git`
+            # ausente devolvia None e o programa seguia imprimindo "ledger valido". Duas
+            # dependencias de oraculo, dois tratamentos - e o silencioso era justamente o que
+            # deixava TODO `scope.commit` sem resolucao enquanto o texto afirmava resolucao.
+            erro("git indisponivel: scope.commit NAO VERIFICADO "
+                 "(dependencia de oraculo ausente, nao aprovacao)")
     if not escopo.get("platforms"):
         erro("scope.platforms ausente - alegacao sem dominio testado nao tem alcance definido")
 
@@ -173,10 +180,24 @@ def valida(doc, arquivo, regressoes, mutantes, raiz, vistos):
             erro("evidence.observation exige 'command' e 'recorded'")
         else:
             refs += 1
-            alvo = os.path.join(raiz, str(obs["recorded"]))
-            if not os.path.isfile(alvo):
-                erro(f"evidence.observation.recorded aponta para arquivo inexistente: "
-                     f"'{obs['recorded']}'")
+            rec = str(obs["recorded"])
+            # CONFINAMENTO (auditoria de 2026-08-04). `os.path.join(raiz, x)` DESCARTA `raiz`
+            # quando `x` e absoluto. Medido: uma claim cujo unico lastro era
+            # `recorded: /etc/passwd` era aprovada, e o validador imprimia
+            # "ledger valido: toda evidencia citada existe em tests/" - frase literalmente
+            # falsa. O dano nao e a travessia: e a alegacao passar a ter lastro FORA do
+            # repositorio enquanto o programa afirma que a evidencia foi resolvida.
+            if os.path.isabs(rec) or ".." in rec.split("/"):
+                erro(f"evidence.observation.recorded precisa ser caminho relativo dentro do "
+                     f"repositorio, sem '..': '{rec}'")
+            else:
+                alvo = os.path.realpath(os.path.join(raiz, rec))
+                base = os.path.realpath(raiz)
+                if not (alvo == base or alvo.startswith(base + os.sep)):
+                    erro(f"evidence.observation.recorded escapa do repositorio: '{rec}'")
+                elif not os.path.isfile(alvo):
+                    erro(f"evidence.observation.recorded aponta para arquivo inexistente: "
+                         f"'{rec}'")
 
     if refs == 0:
         erro("nenhuma referencia de evidencia (regression, mutants ou observation). "

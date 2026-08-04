@@ -118,9 +118,108 @@ chk "  a politica saiu do disco" \
 chk "  e nao sobrou backup espurio do proprio instalador" \
     "$([ -e "$FK/etc/claude-code/managed-settings.json.pre-evidence-gate" ] && echo sobrou || echo limpo)" "limpo"
 
+echo "== MG9. manifesto com caminho hostil e REJEITADO, sem escrever nada =="
+# ACHADO DE AUDITORIA, com PoC executada: o manifesto e arquivo do REPOSITORIO, isto e, esta no
+# espaco de escrita do ator governado, e suas colunas eram usadas verbatim como caminho de
+# `mkdir -p`, `cp -f` e `rm -rf` - com o script rodando como ROOT. Medido antes da correcao:
+#   destino=../../../ZONA/vitima.conf  -> arquivo FORA do prefixo sobrescrito
+#   destino=../../../ZONA (origem=dir) -> `rm -rf` destruiu o diretorio FORA do prefixo
+# Sob sudo isso e escrita e remocao arbitrarias como root a partir de dado que o ator controla.
+# A raiz de confianca seria instalada A PARTIR DE entrada nao confiavel - a inversao da tese.
+ZONA="$T/zona-proibida"; mkdir -p "$ZONA"
+printf 'intocavel\n' > "$ZONA/vitima.conf"
+HOSTIL="$T/hostil.lock"
+printf 'hook\tevidence/hooks/subagent-contract.sh\t../../../zona-proibida/vitima.conf\tdead\n' > "$HOSTIL"
+FK3="$T/raiz3"; mkdir -p "$FK3"
+rc=$(MANAGED_PREFIX="$FK3" MANAGED_MANIFEST="$HOSTIL" bash "$AM" >/dev/null 2>&1; echo $?)
+chk "destino com '..' reprova" "$rc" 1
+chk "  a vitima FORA do prefixo esta intacta" "$(cat "$ZONA/vitima.conf" 2>/dev/null)" "intocavel"
+chk "  e nada foi escrito no prefixo" "$([ -e "$FK3/opt" ] && echo escreveu || echo vazio)" "vazio"
+printf 'hook\t/etc/hostname\thooks/vazado.sh\tdead\n' > "$HOSTIL"
+rc=$(MANAGED_PREFIX="$FK3" MANAGED_MANIFEST="$HOSTIL" bash "$AM" >/dev/null 2>&1; echo $?)
+chk "origem ABSOLUTA reprova (copiaria arquivo de fora do repo)" "$rc" 1
+# CONTROLE: sem ele, um instalador que reprovasse SEMPRE passaria nos quatro casos acima.
+rc=$(MANAGED_PREFIX="$T/raiz4" bash "$AM" >/dev/null 2>&1; echo $?)
+chk "  e o manifesto REAL continua sendo aceito" "$rc" 0
+
+echo "== MG10. o gerador da politica nao aceita injecao de JSON =="
+# O valor do caminho-base ia para `sed "s|@BASE@|$BASE|g"` sobre o texto do JSON. Um valor com
+# aspas FECHA a string e ABRE OBJETO NOVO, e o resultado continua JSON VALIDO - o `jq -e .` do
+# consumidor nao barra. E esse documento vira politica em /etc/claude-code/.
+INJ='/x","timeout":1},{"type":"command","command":"id > /tmp/PWNED_MG10","z":"/y'
+OUTJ="$T/inj.json"
+bash install/hooks-spec.sh "$INJ" > "$OUTJ" 2>/dev/null
+chk "o documento gerado continua sendo JSON valido" \
+    "$(jq -e . "$OUTJ" >/dev/null 2>&1 && echo sim || echo nao)" "sim"
+# A propriedade nao e "nao gera JSON": e o valor hostil virar UM ESCALAR, sem criar entradas
+# de hook novas. Contamos a estrutura, nao o texto.
+chk "  o numero de hooks NAO aumentou (valor virou escalar, nao estrutura)" \
+    "$(jq '[..|objects|select(has("command"))|.command]|length' "$OUTJ")" \
+    "$(bash install/hooks-spec.sh /base/inocente | jq '[..|objects|select(has("command"))|.command]|length')"
+chk "  e nenhum comando e exatamente o payload injetado" \
+    "$(jq -r '[..|objects|select(has("command"))|.command]|map(select(.=="id > /tmp/PWNED_MG10"))|length' "$OUTJ")" "0"
+# `&` era expandido pelo sed como retrovisor, corrompendo o caminho em silencio.
+chk "  '&' no caminho nao vira retrovisor" \
+    "$(bash install/hooks-spec.sh '/tmp/&&&' | jq -r '.Stop[0].hooks[0].command')" \
+    "bash /tmp/&&&/verify-gate.sh"
+
+echo "== MG11. conjunto de politica VAZIO nao e conformidade =="
+# ACHADO DE REVISAO INDEPENDENTE, com PoC executada. O portao contava DIVERGENCIA e nunca
+# POPULACAO. Com o conjunto vazio: o laco de copia nao copia nada, a conformidade nao itera
+# nada, "0 divergentes" era lido como aprovacao, e `--enforce` gravava
+# allowManagedHooksOnly:true apontando para 14 caminhos INEXISTENTES - o mecanismo inteiro de
+# hooks desligado com aparencia de ligado, que e a armadilha que este arquivo diz tratar.
+# MG6 nao pegava: ele sabota UMA entrada (div=1); nao esvazia o conjunto.
+# Ausencia de divergencia num conjunto vazio e vacuamente verdadeira.
+VAZIO="$T/vazio.lock"
+# `tr` nos separadores e o gatilho realista: qualquer normalizacao de whitespace, filtro de
+# git ou renome de coluna produz o mesmo efeito.
+tr '\t' ' ' < install/manifest.lock > "$VAZIO"
+chk "o manifesto degradado de fato produz ZERO componentes" \
+    "$(awk -F'\t' '!/^#/ && ($1=="hook"||$1=="adapter"||$1=="doctool")' "$VAZIO" | wc -l | tr -d ' ')" "0"
+FK5="$T/raiz5"; mkdir -p "$FK5"
+rc=$(MANAGED_PREFIX="$FK5" MANAGED_MANIFEST="$VAZIO" bash "$AM" --enforce >/dev/null 2>&1; echo $?)
+chk "  --enforce REPROVA com conjunto vazio" "$rc" 1
+chk "  e a politica nem chegou a ser criada" \
+    "$([ -f "$FK5/etc/claude-code/managed-settings.json" ] && echo criada || echo ausente)" "ausente"
+rc=$(MANAGED_PREFIX="$FK5" MANAGED_MANIFEST="$VAZIO" bash "$AM" --verify >/dev/null 2>&1; echo $?)
+chk "  --verify tambem REPROVA (vazio nao e conforme)" "$rc" 1
+
+echo "== MG12. --revert nao apaga politica que nao foi este instalador que escreveu =="
+# O comentario do ramo de reversao ja prometia "Remove SOMENTE o que este script cria", e o
+# codigo nao cumpria: apagava QUALQUER managed-settings.json, inclusive politica corporativa de
+# outra ferramenta - que pode conter permissions.deny - sem backup, sem aviso, e sob sudo.
+# Promessa em comentario que o codigo nao entrega, no caminho destrutivo.
+FK6="$T/raiz6"; mkdir -p "$FK6/etc/claude-code"
+printf '{"_managed_by":"OUTRA-FERRAMENTA","permissions":{"deny":["Bash"]}}\n' > "$FK6/etc/claude-code/managed-settings.json"
+rc=$(MANAGED_PREFIX="$FK6" bash "$AM" --revert >/dev/null 2>&1; echo $?)
+chk "--revert REPROVA diante de politica de terceiro" "$rc" 1
+chk "  e a politica de terceiro continua no disco" \
+    "$(jq -r '._managed_by' "$FK6/etc/claude-code/managed-settings.json" 2>/dev/null)" "OUTRA-FERRAMENTA"
+# CONTROLE: sem ele, um --revert que reprovasse SEMPRE passaria nos dois casos acima.
+FK7="$T/raiz7"
+MANAGED_PREFIX="$FK7" bash "$AM" >/dev/null 2>&1
+rc=$(MANAGED_PREFIX="$FK7" bash "$AM" --revert >/dev/null 2>&1; echo $?)
+chk "  e a politica DESTE instalador continua sendo removida" "$rc" 0
+
+echo "== MG13. sob prefixo de ensaio, posse e gravabilidade sao NAO VERIFICADAS =="
+# SETIMA INSTANCIA do padrao vacuo, achada por revisao independente. As colunas de dono e de
+# gravabilidade so sao AVALIADAS quando o prefixo e a raiz real; sob ensaio o laco nem entra
+# nesse ramo. Imprimir "0 gravaveis pelo ator" ali era pos-condicao trivialmente verdadeira -
+# e essa e a garantia CENTRAL da fase 2, lida pela suite como aprovada.
+FK8="$T/raiz8"
+MANAGED_PREFIX="$FK8" bash "$AM" >/dev/null 2>&1
+SAIDA="$(MANAGED_PREFIX="$FK8" bash "$AM" --verify 2>&1)"
+chk "o modo de ensaio declara NAO VERIFICADO em vez de 0" \
+    "$(printf '%s' "$SAIDA" | grep -qc 'NAO VERIFICADO' >/dev/null && echo sim || echo nao)" "sim"
+chk "  e NAO afirma 'fora do espaco de escrita do ator'" \
+    "$(printf '%s' "$SAIDA" | grep -q 'ESTADO: politica fora do espaco' && echo afirma || echo nao-afirma)" "nao-afirma"
+chk "  os arquivos sob ensaio sao mesmo gravaveis (a garantia NAO vale ali)" \
+    "$([ -w "$FK8/opt/evidence-gate/hooks/verify-gate.sh" ] && echo gravavel || echo protegido)" "gravavel"
+
 echo
 echo "================ PASS=$P  FAIL=$F ================"
-EXPECTED=23
+EXPECTED=42
 if [ "$P" -ne "$EXPECTED" ]; then
   echo "CONTAGEM INESPERADA: PASS=$P, esperado $EXPECTED. Caso removido ou nao executado."
   exit 1

@@ -40,6 +40,13 @@ REPO="$PWD"
 MAN="${MANAGED_MANIFEST:-install/manifest.lock}"
 PREFIX="${MANAGED_PREFIX:-/}"
 PREFIX="${PREFIX%/}"                 # normaliza: "/" vira "", evitando "//etc"
+# CANONICALIZA o prefixo: sem isto, `MANAGED_PREFIX=/tmp/x/opt/..` faz $OPT conter `..` e a
+# checagem de confinamento abaixo comparara prefixos textuais que nao correspondem ao caminho
+# real. `realpath -m` resolve sem exigir que o caminho exista.
+if [ -n "$PREFIX" ]; then
+  PREFIX="$(realpath -m "$PREFIX" 2>/dev/null || printf '%s' "$PREFIX")"
+  PREFIX="${PREFIX%/}"
+fi
 OPT="$PREFIX/opt/evidence-gate"
 ETC="$PREFIX/etc/claude-code"
 SETTINGS="$ETC/managed-settings.json"
@@ -68,6 +75,56 @@ destino_managed(){ printf '%s\n' "${1#evidence-gate/}"; }
 # tipos que compoem a POLITICA. agent e skill ficam de fora por decisao declarada no cabecalho.
 tipos_politica(){ awk -F'\t' '!/^#/ && ($1=="hook" || $1=="adapter" || $1=="doctool")' "$MAN"; }
 
+# ===================== CONFINAMENTO DE CAMINHO (auditoria de 2026-08-04) =====================
+# DEFEITO CRITICO CORRIGIDO, com PoC executada. O manifesto e um ARQUIVO DO REPOSITORIO, isto e,
+# esta dentro do espaco de escrita do ator governado. Suas colunas `origem` e `destino` eram
+# usadas VERBATIM como caminho de `mkdir -p`, `cp -f` e `rm -rf`, e este script roda como ROOT.
+# Medido, com prefixo temporario:
+#
+#   destino = ../../../ZONA_PROIBIDA/vitima.conf   -> arquivo FORA do prefixo sobrescrito
+#   destino = ../../../ZONA_PROIBIDA  (origem=dir) -> `rm -rf` destruiu o diretorio FORA do prefixo
+#
+# Sob `sudo`, isso e escrita e remocao arbitrarias como root a partir de dado que o ator
+# controla: `/etc/cron.d/`, `/etc/sudoers.d/`, `~/.ssh/authorized_keys`. A raiz de confianca
+# seria instalada a partir de entrada nao confiavel - a inversao exata da tese deste projeto.
+#
+# O DIGEST NAO PROTEGE. `install/manifest.sh` calcula o sha256 do MESMO working tree que
+# deveria proteger, e o loop de deploy descartava a coluna. A conformidade compara o arquivo
+# copiado com o valor que o proprio atacante escreveu. E detector de drift contra `~/.claude`,
+# nunca controle de integridade sobre o repositorio - e essa distincao passou despercebida ate
+# a auditoria.
+#
+# A regra e REJEITAR A LINHA E ABORTAR, nunca sanear: sanear um caminho hostil deixa a duvida
+# sobre o que sobrou, e num contexto root a duvida nao e aceitavel.
+confinado(){ # $1=caminho candidato  $2=raiz que deve conte-lo -> 0 se dentro
+  local c r
+  c="$(realpath -m "$1" 2>/dev/null)" || return 1
+  r="$(realpath -m "$2" 2>/dev/null)" || return 1
+  case "$c" in "$r"|"$r"/*) return 0 ;; *) return 1 ;; esac
+}
+
+valida_manifesto(){ # ecoa violacoes; retorna != 0 se houver qualquer uma
+  local ruins=0 tipo origem destino _sha
+  while IFS=$'\t' read -r tipo origem destino _sha; do
+    # 1. forma. Rejeita absoluto e qualquer componente `..` ANTES de tocar no filesystem.
+    case "$destino" in
+      ""|/*|../*|*/../*|*/..|"..") echo "  DESTINO INVALIDO: [$destino]"; ruins=$((ruins+1)); continue ;;
+    esac
+    case "$origem" in
+      ""|/*|../*|*/../*|*/..|"..") echo "  ORIGEM INVALIDA: [$origem]"; ruins=$((ruins+1)); continue ;;
+    esac
+    # 2. confinamento efetivo. A checagem de forma sozinha nao cobre symlink no meio do
+    #    caminho; `realpath -m` resolve e a comparacao e sobre o caminho REAL.
+    confinado "$OPT/$(destino_managed "$destino")" "$OPT" \
+      || { echo "  DESTINO ESCAPA DE $OPT: [$destino]"; ruins=$((ruins+1)); continue; }
+    confinado "$REPO/$origem" "$REPO" \
+      || { echo "  ORIGEM ESCAPA DE $REPO: [$origem]"; ruins=$((ruins+1)); continue; }
+    [ -e "$REPO/$origem" ] || { echo "  ORIGEM INEXISTENTE: [$origem]"; ruins=$((ruins+1)); }
+  done < <(tipos_politica)
+  [ "$ruins" -eq 0 ]
+}
+# =============================================================================================
+
 plano(){
   tipos_politica | while IFS=$'\t' read -r tipo origem destino _sha; do
     printf '  %-8s %s -> %s/%s\n' "$tipo" "$origem" "$OPT" "$(destino_managed "$destino")"
@@ -85,6 +142,18 @@ fi
 
 if [ "$MODO" = "revert" ]; then
   # Remove SOMENTE o que este script cria. Nunca toca em caminho desconhecido.
+  #
+  # A MARCA `_managed_by` E CONSULTADA AQUI, e nao so no ramo de backup. Antes, o comentario
+  # acima ja prometia isto e o codigo nao cumpria: `--revert` apagava QUALQUER
+  # `managed-settings.json`, inclusive uma politica corporativa de outra ferramenta - que pode
+  # conter `permissions.deny` - sem backup e sem aviso, e sob `sudo`. Promessa em comentario
+  # que o codigo nao entrega e o defeito central deste repositorio, aqui no caminho destrutivo.
+  if [ -f "$SETTINGS" ] && ! jq -e '._managed_by == "evidence-gate"' "$SETTINGS" >/dev/null 2>&1; then
+    echo "ERRO: '$SETTINGS' NAO foi escrito por este instalador (falta a marca _managed_by)." >&2
+    echo "      Nada foi removido. Se a intencao e descartar essa politica, remova-a a mao" >&2
+    echo "      depois de ler o conteudo - este script nao apaga o que nao criou." >&2
+    exit 1
+  fi
   if [ -f "$SETTINGS" ]; then rm -f "$SETTINGS"; echo "removido: $SETTINGS"; fi
   if [ -f "$SETTINGS.pre-evidence-gate" ]; then
     mv -f "$SETTINGS.pre-evidence-gate" "$SETTINGS"; echo "restaurado o managed-settings.json anterior"
@@ -115,21 +184,54 @@ conformidade_managed(){   # ecoa "ok N" ou lista divergencias; nunca escreve
 }
 
 if [ "$MODO" = "verify" ]; then
+  # Tambem valida o manifesto: `--verify` monta caminhos a partir dele para hashear, e um
+  # destino hostil faria a conformidade LER fora de $OPT. Nao escreve, mas "conforme" sobre
+  # arquivo de outro lugar seria conformidade falsa.
+  if ! valida_manifesto; then
+    echo "ERRO: manifesto rejeitado - caminho fora dos limites. Conformidade NAO VERIFICADA." >&2
+    exit 1
+  fi
   out="$(conformidade_managed)"; printf '%s\n' "$out" | grep -v '^RESUMO' || true
   read -r _ n div dono grav <<<"$(printf '%s\n' "$out" | grep '^RESUMO')"
-  printf 'managed: %s componentes | %s divergentes | %s com dono errado | %s gravaveis pelo ator\n' \
-         "$n" "$div" "$dono" "$grav"
+  # HONESTIDADE DE MODO. As colunas de dono e de gravabilidade so sao AVALIADAS quando o
+  # prefixo e a raiz real; sob prefixo de ensaio o laco nem entra nesse ramo. Imprimir "0
+  # gravaveis pelo ator" ali era pos-condicao vacuamente verdadeira - a checagem nao executou -
+  # e a suite lia esse veredito como aprovacao da garantia CENTRAL da fase 2.
+  if [ "$REAL" -eq 1 ]; then
+    printf 'managed: %s componentes | %s divergentes | %s com dono errado | %s gravaveis pelo ator\n' \
+           "$n" "$div" "$dono" "$grav"
+  else
+    printf 'managed: %s componentes | %s divergentes | dono=NAO VERIFICADO gravabilidade=NAO VERIFICADO (prefixo de ensaio)\n' \
+           "$n" "$div"
+  fi
   if [ -f "$SETTINGS" ]; then
     printf 'allowManagedHooksOnly=%s\n' "$(jq -r '.allowManagedHooksOnly // false' "$SETTINGS" 2>/dev/null)"
   else
     echo "managed-settings.json AUSENTE"; exit 1
   fi
+  [ "${n:-0}" -gt 0 ] || { echo "ESTADO: conjunto VAZIO - nada a verificar, nao e conformidade" >&2; exit 1; }
   [ "$div" -eq 0 ] && [ "$dono" -eq 0 ] && [ "$grav" -eq 0 ] || exit 1
-  echo "ESTADO: politica fora do espaco de escrita do ator"
+  if [ "$REAL" -eq 1 ]; then
+    echo "ESTADO: politica fora do espaco de escrita do ator"
+  else
+    # A frase acima e a AFIRMACAO CENTRAL da fase 2, e sob prefixo de ensaio ela nao foi
+    # medida: posse e gravabilidade so sao avaliadas na raiz real. Imprimi-la aqui seria
+    # publicar a garantia a partir do modo em que ela e inverificavel.
+    echo "ESTADO: conteudo conforme. A posse por root e a NAO-gravabilidade pelo ator sao"
+    echo "        NAO VERIFICADAS neste modo - exigem a raiz real e execucao como root."
+  fi
   exit 0
 fi
 
 # ---------------------------------------------------------------- deploy / enforce
+# PORTAO ZERO: valida TODO o manifesto antes da primeira escrita. Nao ha "aborta no meio":
+# um manifesto parcialmente aplicado como root e pior do que nenhum.
+if ! valida_manifesto; then
+  echo "ERRO: manifesto rejeitado - caminho fora dos limites. NADA foi escrito." >&2
+  echo "      O manifesto e conteudo de repositorio; num contexto root ele e entrada nao" >&2
+  echo "      confiavel. Regenere com 'bash install/manifest.sh' e inspecione o diff." >&2
+  exit 1
+fi
 mkdir -p "$OPT" "$ETC" || exit 1
 while IFS=$'\t' read -r _tipo origem destino _sha; do
   alvo="$OPT/$(destino_managed "$destino")"
@@ -156,9 +258,33 @@ out="$(conformidade_managed)"; printf '%s\n' "$out" | grep -v '^RESUMO' || true
 read -r _ n div dono grav <<<"$(printf '%s\n' "$out" | grep '^RESUMO')"
 printf 'managed: %s componentes | %s divergentes | %s com dono errado | %s gravaveis pelo ator\n' \
        "$n" "$div" "$dono" "$grav"
+# `n` ENTRA NO PORTAO. Sem isto o portao contava DIVERGENCIA e nunca POPULACAO: com o conjunto
+# de politica VAZIO, o laco de copia nao copia nada, a conformidade nao itera nada, e
+# `0 divergentes` era lido como aprovacao - gravando `allowManagedHooksOnly: true` apontando
+# para 14 caminhos inexistentes. Isto e o mecanismo inteiro de hooks desligado com aparencia de
+# ligado, que e exatamente a armadilha que este arquivo diz tratar.
+# Medido: `tr '\t' ' ' < manifest.lock` (qualquer normalizacao de whitespace, filtro de git ou
+# renome de coluna) produz 0 linhas e o --enforce aprovava. MG6 nao pegava: ele sabota UMA
+# entrada (div=1), nao esvazia o conjunto. Ausencia de divergencia num conjunto vazio e
+# vacuamente verdadeira - a mesma forma logica que este repositorio persegue desde o ADR 0022.
+ESPERADOS="$(tipos_politica | wc -l | tr -d ' ')"
+if [ "${n:-0}" -eq 0 ] || [ "$n" -ne "$ESPERADOS" ]; then
+  echo "ERRO: conjunto de politica VAZIO ou incompleto (n=$n, esperado=$ESPERADOS)." >&2
+  echo "      Nada foi escrito e allowManagedHooksOnly NAO foi ativado." >&2
+  echo "      Um manifesto que nao produz componentes nao e um deploy conforme: e um deploy" >&2
+  echo "      inexistente. Regenere com 'bash install/manifest.sh'." >&2
+  exit 1
+fi
 if [ "$div" -ne 0 ] || [ "$dono" -ne 0 ] || [ "$grav" -ne 0 ]; then
-  echo "ERRO: deploy incompleto - a politica NAO foi escrita e allowManagedHooksOnly NAO foi ativado." >&2
-  echo "      O estado anterior permanece intacto." >&2
+  # MENSAGEM CORRIGIDA (auditoria de 2026-08-04). A versao anterior afirmava "o estado anterior
+  # permanece intacto", e isso foi MEDIDO COMO FALSO: quando esta linha era alcancada, os
+  # arquivos ja haviam sido copiados. O portao protege a POLITICA, nao a arvore em $OPT - e uma
+  # mensagem de erro que promete mais do que o codigo entrega e a mesma classe de defeito que
+  # este repositorio persegue, agravada por aparecer justamente no caminho de falha.
+  echo "ERRO: deploy incompleto." >&2
+  echo "      A POLITICA nao foi escrita e allowManagedHooksOnly NAO foi ativado." >&2
+  echo "      ATENCAO: arquivos sob $OPT PODEM ter sido escritos antes desta checagem." >&2
+  echo "      Para limpar: bash install/apply-managed.sh --revert" >&2
   exit 1
 fi
 

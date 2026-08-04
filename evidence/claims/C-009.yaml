@@ -17,16 +17,26 @@ evidence:
   - MC2
   - MC4
   - MC5
+  - MC6
+  - MC7
   ci_run: https://github.com/MrSchrodingers/evidence-gate/actions/workflows/verify.yml
 warrant: R4 exercita as DUAS fontes que o hook le (last_assistant_message e agent_transcript_path) sob
   LC_ALL=C e en_US.UTF-8, e inclui um discriminador que exige reprovacao de retorno sem ancora - sem ele,
   exit 0 nao distingue aprovacao de inercia. MC4 torna o oraculo vacuo e morre nesse discriminador; MC5
-  remove a normalizacao de acento; MC1 e MC2 removem as duas tolerancias que o falso bloqueio medido exigiu.
+  remove a normalizacao de acento; MC1 e MC2 removem as duas tolerancias que o falso bloqueio medido exigiu;
+  MC6 e MC7 removem as duas correcoes que fecharam passagens vacuas achadas por revisao independente.
 limitations:
-- o hook verifica FORMA de ancora, nunca veracidade. Fabricacao deliberada de evidencia esta fora do alcance
-  deste mecanismo
-- o limite de 3 tokens intermediarios no reconhecimento de comando e heuristico e foi calibrado contra
-  um corpus de 15 casos, nao derivado de principio
+- O oraculo distingue TEXTO COM FORMA DE EVIDENCIA de texto sem forma. Ele NAO distingue REPORTAR evidencia
+  de MENCIONAR algo com a mesma forma - e isso nao e patchavel por regex.
+- 'Contraexemplo aberto e MEDIDO: ''a doc em exemplo.com:8080 descreve o comportamento'' atravessa, porque
+  host.tld:porta e arquivo.ext:linha sao lexicalmente identicos.'
+- 'Contraexemplo aberto e MEDIDO: ''pela leitura, o hook faz exit 2 quando falta bloco'' atravessa, porque
+  citar um exit code tem a mesma forma de reportar um.'
+- A ORDEM dos quatro blocos e cobrada pela mensagem ('nesta ordem') e NAO e verificada pelo codigo. Lacuna
+  declarada.
+- Fabricacao deliberada de evidencia esta fora do alcance deste mecanismo, por construcao.
+- 'CORRECAO DE OVERCLAIM: versao anterior desta claim afirmava validacao contra ''corpus de 15 casos''.
+  Esse corpus nunca entrou em tests/. A cobertura real e a que scripts/status.sh publica por execucao.'
 status: supported-in-tested-domain
 counterexamples:
 - commit: 0045a95

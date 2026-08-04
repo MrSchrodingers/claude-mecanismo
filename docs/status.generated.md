@@ -12,17 +12,17 @@ O README referencia este arquivo em vez de duplicar numeros.
 | `tests/unit/supply-chain.sh` | 6 | 0 |
 | `tests/unit/reprodutibilidade.sh` | variavel (ambiente) | 0 |
 | `tests/unit/concorrencia.sh` | 8 | 0 |
-| `tests/unit/claims.sh` | 15 | 0 |
+| `tests/unit/claims.sh` | 18 | 0 |
 | `tests/unit/propriedades.sh` | 22 | 0 |
-| `tests/unit/managed.sh` | 23 | 0 |
-| `tests/unit/run.sh` | 45 | 0 |
+| `tests/unit/managed.sh` | 42 | 0 |
+| `tests/unit/run.sh` | 52 | 0 |
 
 ## Mutacao
 
 | Alvo | Mutantes | Exit |
 |---|---:|---:|
 | gate | 10 | 0 |
-| contrato de subagente | 5 | 0 |
+| contrato de subagente | 9 | 0 |
 | instalador | 1 | 0 |
 
 ## Componentes

@@ -22,7 +22,7 @@ TMP="$(mktemp -d)"
 cp -f "$ORIG" "$TMP/orig.sh"
 # O trap restaura o ORIGINAL antes de apagar o TMP - na ordem inversa o arquivo se perde.
 trap 'cp -f "$TMP/orig.sh" "$ORIG" 2>/dev/null || true; rm -rf "$TMP"' EXIT
-P=0; F=0; BASELINE=nao; EXPECTED_MUTANTS=5
+P=0; F=0; BASELINE=nao; EXPECTED_MUTANTS=9
 
 echo "== baseline: a suite precisa passar ANTES de qualquer mutacao =="
 if bash "$REG" >/dev/null 2>&1; then echo "  PASS  baseline verde"; BASELINE=ok
@@ -81,7 +81,7 @@ PY
 mutante MC3 "nao-verificado e saida valida" "saida honesta" <<'PY'
 import sys
 p=sys.argv[1]; s=open(p).read()
-s=s.replace(r'|| grep -qiE "$NAO_VERIFICADO" <<<"$NORM" ', '')
+s=s.replace(r'|| grep -qE "$NAO_VERIFICADO" <<<"$NORM" ', '')
 open(p,'w').write(s)
 PY
 
@@ -104,6 +104,58 @@ s2=re.sub(r'NORM="\$\(printf.*?\)"\n', 'NORM="$LAST"\n', s, flags=re.S)
 assert s2 != s, "padrao da normalizacao nao encontrado"
 open(p,'w').write(s2)
 PY
+
+# MC6 - a alternativa de prompt de shell volta a casar em QUALQUER posicao. Alvo: o caso da
+#       moeda. Em PT-BR `R$ ` e notacao corrente; sem a ancora de inicio de linha ela
+#       satisfazia sozinha a exigencia de evidencia. Achado por revisao independente.
+mutante MC6 "prompt de shell ancorado no inicio da linha" "cifrao de MOEDA" <<'MUT'
+import sys
+p = sys.argv[1]
+s = open(p).read()
+alvo = "ANCORA=\"$ANCORA\"'|^[[:space:]]*[$>][[:space:]]'"
+assert alvo in s, "padrao do prompt ancorado nao encontrado"
+s = s.replace(alvo, "ANCORA=\"$ANCORA\"'|\\$ '")
+open(p, 'w').write(s)
+MUT
+
+# MC7 - o token de nao-verificacao volta a casar minusculas por substring, sem polaridade.
+#       Alvo: a frase NEGADA, que AFIRMA verificacao e atravessava - e que o proprio hook
+#       ensinava, por conter a frase na mensagem de bloqueio. Achado por revisao independente.
+mutante MC7 "token NAO VERIFICADO em caixa alta" "nada ficou nao verificado" <<'MUT'
+import sys
+p = sys.argv[1]
+s = open(p).read()
+alvo = "NAO_VERIFICADO='NAO[[:space:]]+VERIFICADO'"
+assert alvo in s, "padrao do token nao encontrado"
+s = s.replace(alvo, "NAO_VERIFICADO='(nao|not)[[:space:]]+(verificad[oa]|verified)'")
+alvo2 = 'grep -qE "$NAO_VERIFICADO" <<<"$NORM"'
+assert alvo2 in s, "chamada do token nao encontrada"
+s = s.replace(alvo2, 'grep -qiE "$NAO_VERIFICADO" <<<"$NORM"')
+open(p, 'w').write(s)
+MUT
+
+# MC8 - a exigencia do bloco RISCOS some. Alvo: o caso que cobra o contrato inteiro, e nao
+#       metade dele. A mensagem do hook sempre cobrou quatro blocos; o codigo conferia dois.
+mutante MC8 "o bloco RISCOS e cobrado" "BARRA retorno sem RISCOS" <<'MUT'
+import sys
+p = sys.argv[1]
+s = open(p).read()
+alvo = "grep -qiE '^[[:space:]]*[-*#]*[[:space:]]*RISCOS' <<<\"$NORM\"    || MISS=\"$MISS RISCOS\""
+assert alvo in s, "padrao de RISCOS nao encontrado"
+s = s.replace(alvo, "true")
+open(p, 'w').write(s)
+MUT
+
+# MC9 - a exigencia do bloco PROPAGACAO some. Alvo: o caso correspondente.
+mutante MC9 "o bloco PROPAGACAO e cobrado" "BARRA retorno sem PROPAGACAO" <<'MUT'
+import sys
+p = sys.argv[1]
+s = open(p).read()
+alvo = "grep -qiE '^[[:space:]]*[-*#]*[[:space:]]*PROPAGACAO' <<<\"$NORM\" || MISS=\"$MISS PROPAGACAO\""
+assert alvo in s, "padrao de PROPAGACAO nao encontrado"
+s = s.replace(alvo, "true")
+open(p, 'w').write(s)
+MUT
 
 cp -f "$TMP/orig.sh" "$ORIG"
 echo

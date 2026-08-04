@@ -94,38 +94,89 @@ NORM="$(printf '%s' "$LAST" | sed \
 #
 # A correcao e da CLASSE, nao da instancia (nao foi "adicionar wc a lista"): pontuacao de
 # markdown tolerada, e FORMA de comando (token em posicao de comando seguido de flag) em vez
-# de NOME de comando. Validado contra corpus de 15 casos - 9 positivos, 6 negativos - e por
-# mutacao: removida cada alternativa, o caso-alvo correspondente reprova.
+# de NOME de comando. Cada alternativa tem caso-alvo em `tests/unit/run.sh` e mutante
+# correspondente em `tests/mutation/contrato.sh`.
 #
-# O limite de 3 tokens intermediarios e o que separa `npm run test -- --ci` (evidencia) de
-# uma frase em prosa que por acaso cita uma flag (nao e evidencia). Nao ha oraculo perfeito
-# aqui: o hook verifica FORMA, nunca veracidade. Fabricacao deliberada esta fora do alcance
-# deste mecanismo e permanece lacuna declarada.
+# CORRECAO DE UMA AFIRMACAO FALSA (revisao independente, 2026-08-04): este comentario dizia
+# "validado contra corpus de 15 casos - 9 positivos, 6 negativos". Esse corpus existiu no
+# rascunho de quem escreveu a correcao e NUNCA ENTROU EM `tests/`. Afirmar cobertura que o
+# repositorio nao tem e a classe de defeito que este projeto existe para impedir, aqui dentro
+# do proprio mecanismo. A contagem real e a que `scripts/status.sh` publica por execucao.
+#
+# ================== LIMITE EPISTEMICO, e ele NAO e patchavel por regex ==================
+# Este oraculo distingue TEXTO QUE TEM FORMA DE EVIDENCIA de texto que nao tem. Ele NAO
+# distingue REPORTAR evidencia de MENCIONAR algo com a mesma forma. Dois contraexemplos
+# medidos, que continuam atravessando e estao declarados em `evidence/claims/C-009.yaml`:
+#
+#   "a doc em exemplo.com:8080 descreve o comportamento"   -> casa `arquivo.ext:linha`
+#   "pela leitura, o hook faz exit 2 quando falta bloco"   -> casa `exit <digito>`
+#
+# `host.tld:porta` e `arquivo.ext:linha` sao lexicalmente identicos; citar um exit code e
+# reportar um exit code tambem. Nenhuma expressao regular separa os dois casos, e mais uma
+# rodada de regex trocaria este falso aceite por outro falso bloqueio - foi assim que o
+# defeito de producao de 2026-08-04 nasceu.
+#
+# O que o mecanismo entrega, entao, e ESTREITO e vale escrito: ele torna CARO devolver prosa
+# sem nenhuma forma de evidencia, e torna a ausencia observavel. Ele nao verifica que a
+# evidencia foi produzida, nem que e verdadeira. Quem cobra isso e o orquestrador que le o
+# retorno. Fabricacao deliberada esta fora do alcance deste hook, por construcao.
+# ========================================================================================
 ANCORA='[A-Za-z0-9_./-]+\.[A-Za-z0-9]+:[0-9]+'
 ANCORA="$ANCORA"'|exit[^0-9A-Za-z]{0,4}(code|status)?[^0-9A-Za-z]{0,4}[0-9]'
 ANCORA="$ANCORA"'|(^|[`$(>|])[[:space:]]*[a-z][a-z0-9_.+-]*([[:space:]]+[a-z0-9_.+-]+){0,3}[[:space:]]+-{1,2}[A-Za-z0-9]'
-ANCORA="$ANCORA"'|\$ '
+# PROMPT DE SHELL, ANCORADO NO INICIO DA LINHA. Antes era `\$ ` em qualquer posicao, e isso
+# tornava a alternativa VACUA em PT-BR: `R$ 500 mil` e `US$ 2 bilhoes` sao notacao corrente e
+# satisfaziam a ancora sozinhas. Medido na auditoria de 2026-08-04: um retorno cuja unica
+# "evidencia" era "o custo do incidente foi de R$ 500 mil" atravessava o portao.
+# Prompt de shell de verdade abre a linha; cifrao de moeda vem no meio dela.
+ANCORA="$ANCORA"'|^[[:space:]]*[$>][[:space:]]'
 
-# SAIDA HONESTA. `nao verificado` e resposta valida - o CLAUDE.md declara isso na secao 4 e a
+# SAIDA HONESTA. `NAO VERIFICADO` e resposta valida - o CLAUDE.md declara isso na secao 4 e a
 # mensagem de bloqueio deste proprio hook a promete por escrito. Ela era INEXEQUIVEL: medido,
-# um retorno declarando "nao verificado - o binario nao existe neste ambiente" recebia exit 2
-# IDENTICO ao de prosa vazia. Consequencia estrutural: o unico caminho estavel para atravessar
-# o portao era APRESENTAR uma ancora, isto e, o mecanismo criado para punir alegacao sem lastro
-# pressionava na direcao de fabricar lastro. Declarar nao-verificacao nao e furo no contrato:
-# e um rotulo explicito, mais caro que uma ancora falsa, que o orquestrador le e cobra.
-# NORM ja removeu os acentos, entao `nao` cobre `nao` e `nao`.
-NAO_VERIFICADO='(nao|not)[[:space:]]+(verificad[oa]|verified)'
+# um retorno declarando nao-verificacao recebia exit 2 IDENTICO ao de prosa vazia. Consequencia
+# estrutural: o unico caminho estavel para atravessar o portao era APRESENTAR uma ancora, isto
+# e, o mecanismo criado para punir alegacao sem lastro pressionava na direcao de fabricar lastro.
+#
+# O TOKEN E MAIUSCULO, E ISSO NAO E ESTILO. A primeira versao casava
+# `(nao|not)[[:space:]]+(verificad[oa]|verified)` sem distincao de caixa nem de polaridade, e a
+# auditoria de 2026-08-04 mediu duas passagens vacuas:
+#   "Nada ficou nao verificado, revisei por leitura"  -> AFIRMA verificacao e atravessava;
+#   ecoar a mensagem de bloqueio deste hook           -> atravessava, e o hook ENSINA a frase
+#                                                        ao bloquear.
+# A segunda e a pior: um portao que publica a propria chave na mensagem de erro.
+# Regex nao decide polaridade em linguagem natural. O que decide e um TOKEN deliberado, que nao
+# aparece em prosa corrida: `NAO VERIFICADO` em caixa alta, o mesmo vocabulario que
+# `verify-gate.sh` ja usa para estado. Declarar em caixa alta e barato de escrever e caro de
+# escrever por acidente - e o orquestrador le o rotulo e cobra.
+# NORM removeu os acentos preservando a caixa, entao `NAO` cobre `NAO` e `NÃO`.
+NAO_VERIFICADO='NAO[[:space:]]+VERIFICADO'
 # =============================================================================================
 
+# OS QUATRO BLOCOS, e nao dois. A mensagem de bloqueio deste hook cobra RESULTADO, EVIDENCIA,
+# RISCOS e PROPAGACAO "nesta ordem" desde que existe, mas o codigo so verificava os dois
+# primeiros - a auditoria de 2026-08-04 mediu um retorno com apenas RESULTADO e EVIDENCIA
+# saindo 0. Mensagem que cobra mais do que o mecanismo confere e a mesma classe de defeito que
+# este repositorio persegue, agravada por estar no PROPRIO texto que ensina o contrato.
+# Alinhado no sentido de fortalecer o mecanismo, nao de enfraquecer a mensagem: o contrato de
+# quatro blocos e o que o CLAUDE.md publica, e RISCOS e PROPAGACAO sao justamente onde cabe o
+# que o agente NAO conseguiu fechar. A ORDEM segue nao verificada - o texto promete "nesta
+# ordem" e isso continua sendo mais forte do que o codigo cobra. Lacuna declarada, nao coberta.
 MISS=""
 grep -qiE '^[[:space:]]*[-*#]*[[:space:]]*RESULTADO' <<<"$NORM" || MISS="$MISS RESULTADO"
 
 if grep -qiE '^[[:space:]]*[-*#]*[[:space:]]*EVIDENCIA' <<<"$NORM"; then
-  grep -qE "$ANCORA" <<<"$NORM" || grep -qiE "$NAO_VERIFICADO" <<<"$NORM" \
+  # `NAO VERIFICADO` e alternativa a ancora, nao dispensa do bloco EVIDENCIA: a declaracao tem
+  # de estar escrita, e nao apenas o bloco existir vazio.
+  grep -qE "$ANCORA" <<<"$NORM" || grep -qE "$NAO_VERIFICADO" <<<"$NORM" \
     || MISS="$MISS ANCORA-DE-EVIDENCIA"
 else
   MISS="$MISS EVIDENCIA"
 fi
+
+# RISCOS aceita sufixo (`RISCOS-PENDENCIAS`, `RISCOS / PENDENCIAS`) porque e como os agentes
+# escrevem de fato - medido nos retornos reais capturados pela sonda.
+grep -qiE '^[[:space:]]*[-*#]*[[:space:]]*RISCOS' <<<"$NORM"    || MISS="$MISS RISCOS"
+grep -qiE '^[[:space:]]*[-*#]*[[:space:]]*PROPAGACAO' <<<"$NORM" || MISS="$MISS PROPAGACAO"
 
 [ -n "$MISS" ] || exit 0
 
@@ -137,7 +188,10 @@ fi
   echo "                a conclusao e auto-avaliacao, e auto-avaliacao nao e sinal."
   echo "  RISCOS      - o que ficou em aberto ou precisa de decisao."
   echo "  PROPAGACAO  - pontos do grafo de dependencias afetados (ou 'nenhum', justificado)."
-  echo "Se nao conseguiu obter evidencia, diga isso em EVIDENCIA - 'nao verificado' e resposta"
-  echo "valida; afirmacao sem lastro nao e."
+  echo "Se nao conseguiu obter evidencia, escreva em EVIDENCIA o token NAO VERIFICADO, em"
+  echo "caixa alta, com o motivo ao lado. E resposta valida; afirmacao sem lastro nao e."
+  echo "A caixa alta e exigida de proposito: em prosa corrida a frase aparece por acidente e"
+  echo "ate negada ('nada ficou nao verificado'), e o portao passava a aceitar o oposto do que"
+  echo "queria aceitar."
 } >&2
 exit 2

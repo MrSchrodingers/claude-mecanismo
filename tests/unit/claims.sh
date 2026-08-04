@@ -138,6 +138,31 @@ SB="$T/sabotagem"; mkdir -p "$SB"; printf 'raise ImportError("indisponivel por f
 rc=$(PYTHONPATH="$SB" python3 "$V" "$REPO" "$REPO/evidence/claims" >/dev/null 2>&1; echo $?)
 chk "sem parser, o validador declara NAO VERIFICADO" "$rc" 2
 
+echo "== L11. observation com caminho ABSOLUTO ou '..' reprova =="
+# ACHADO DE AUDITORIA: `os.path.join(raiz, x)` DESCARTA `raiz` quando `x` e absoluto. Medido:
+# uma claim cujo unico lastro era `recorded: /etc/passwd` era APROVADA, e o validador imprimia
+# "ledger valido: toda evidencia citada existe em tests/" - frase literalmente falsa. O dano
+# nao e a travessia em si: e a alegacao passar a ter lastro FORA do repositorio enquanto o
+# programa afirma ter resolvido a evidencia contra a suite.
+obs_fixture(){ # $1=destino  $2=valor de recorded
+python3 - "$1" "$2" "$SHA" <<'PY2'
+import sys, yaml
+d = {"claim_id":"C-001","claim":"lastro fora do repo","type":"runtime-observation",
+     "scope":{"commit":sys.argv[3],"platforms":["local-linux"]},
+     "evidence":{"observation":{"command":"echo","recorded":sys.argv[2]},
+                 "ci_run":"http://exemplo.invalido"},
+     "warrant":"fixture","limitations":["fixture"],"status":"supported-in-tested-domain"}
+yaml.safe_dump(d, open(sys.argv[1],"w"), allow_unicode=True, sort_keys=False)
+PY2
+}
+D="$T/l11"; mkdir -p "$D"; obs_fixture "$D/C-001.yaml" "/etc/passwd"
+chk "recorded absoluto (/etc/passwd) reprova" "$(val "$D")" 1
+D="$T/l11b"; mkdir -p "$D"; obs_fixture "$D/C-001.yaml" "../../../../etc/hostname"
+chk "  recorded com '..' reprova" "$(val "$D")" 1
+# CONTROLE: sem ele, um validador que reprovasse toda observation passaria nos dois acima.
+D="$T/l11c"; mkdir -p "$D"; obs_fixture "$D/C-001.yaml" "docs/HANDOFF.md"
+chk "  e um caminho relativo VALIDO dentro do repo passa" "$(val "$D")" 0
+
 echo "== L10. inventario vazio e NAO VERIFICADO, nao ledger valido =="
 # Autochecagem: se o contrato de extracao deixar de casar com tests/, o validador precisa
 # gritar. Sem isto ele reprovaria tudo, ou - com regex frouxa - aprovaria tudo.
@@ -147,7 +172,7 @@ chk "extracao vazia -> exit 2, nunca 0" "$rc" 2
 
 echo
 echo "================ PASS=$P  FAIL=$F ================"
-EXPECTED=15
+EXPECTED=18
 if [ "$P" -ne "$EXPECTED" ]; then
   echo "CONTAGEM INESPERADA: PASS=$P, esperado $EXPECTED. Caso removido ou nao executado."
   exit 1

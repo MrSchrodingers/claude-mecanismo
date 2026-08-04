@@ -1,0 +1,10 @@
+# Artefato binario versionado e higiene de cadeia de suprimentos: nenhum revisor le um .pyc e
+# nenhum teste o cobre. Um deles foi versionado por acidente (git add -A) e so apareceu na
+# auditoria de 2026-08-04.
+__pycache__/
+*.py[cod]
+# residuos de ferramenta
+.mypy_cache/
+.ruff_cache/
+# gerado por install/verify.sh na CI
+install/manifest.check
