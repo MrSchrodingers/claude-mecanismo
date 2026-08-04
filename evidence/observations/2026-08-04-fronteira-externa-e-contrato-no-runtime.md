@@ -144,3 +144,46 @@ Decisao do hook -> runtime impede a escrita -> modelo observa e explica. Os tres
   UMA vez de proposito, justamente para nao iterar ate o cap.
 - Nada aqui mede eficacia de engenharia. Mede que o mecanismo executa e que suas decisoes
   chegam ao runtime e ao modelo.
+
+---
+
+## Adendo - a formulacao precisa, e o falso alarme que quase publiquei
+
+Ao reconferir o portao no fim da sessao (re-teste, nao memoria), `git push origin HEAD:main`
+foi ACEITO e `origin/main` avancou. A leitura imediata seria "o ruleset parou de impor", e ela
+contradiria tudo o que este arquivo afirma.
+
+**Era falso alarme, e o que o mostrou foi o CONTROLE.** O SHA empurrado era exatamente o head
+do PR #3, com os dois check-runs `verify` verdes e `mergeStateStatus: CLEAN`. O GitHub aceitou
+e registrou `state: MERGED`, `mergedAt: 2026-08-04T16:16:12Z` - isto e, tratou o push como a
+conclusao do merge, nao como um desvio dele.
+
+Controle executado em seguida, com commit NOVO e nenhum PR associado:
+
+```
+$ git commit --allow-empty -m "teste do portao externo: commit sem PR"
+$ git push origin HEAD:main
+remote: error: GH013: Repository rule violations found for refs/heads/main.
+remote: - Changes must be made through a pull request.
+remote: - Required status check "verify" is expected.
+ ! [remote rejected] HEAD -> main     exit=1
+$ git rev-parse --short origin/main   ->  617e80e   (inalterado)
+```
+
+### A formulacao correta
+
+Errado: "push direto para main e recusado".
+Certo: **um artefato que nao passou por PR com os required checks verdes nao chega a `main`.**
+
+Empurrar um SHA que ja satisfaz TODOS os requisitos nao e contornar a politica - e cumpri-la.
+A propriedade que interessa nunca foi "o comando `git push` falha"; e
+`¬bypass(ator, politica)`, e ela se sustenta: o ator, na sua maior autoridade, nao consegue
+colocar em `main` codigo que a CI nao aprovou sobre aquele mesmo snapshot.
+
+### Por que isto fica registrado
+
+Uma observacao sem controle teria produzido uma refutacao FALSA de uma garantia verdadeira -
+o erro simetrico do que este repositorio persegue, e igualmente caro. O primeiro teste da
+sessao (recusa com GH013) e este (aceite) diferem em UMA variavel: a existencia de um PR
+satisfeito. Sem variar essa variavel de proposito, qualquer um dos dois resultados sozinho
+autorizaria a conclusao errada.

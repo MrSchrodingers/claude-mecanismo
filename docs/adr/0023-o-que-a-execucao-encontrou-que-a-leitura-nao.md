@@ -56,6 +56,12 @@ remote: error: GH013: Repository rule violations found for refs/heads/main.
 O push partiu do token com `admin: true` - o ator governado na sua maior autoridade - e foi
 recusado. `¬bypass(ator, politica)` deixa de ser aspiracao.
 
+**Refinado por um segundo teste, no fim da sessao.** Um push direto foi ACEITO - e o controle
+explicou: o SHA ja era o head de um PR com os checks verdes, e o GitHub o registrou como
+`state: MERGED`. Com commit novo e sem PR, a recusa se repete. A propriedade nunca foi "o
+comando falha"; e que artefato sem PR aprovado nao chega a `main`. Uma observacao sem controle
+teria produzido refutacao FALSA de garantia verdadeira - o erro simetrico, e igualmente caro.
+
 Limite que permanece, e que o README precisa dizer: quem tem admin pode DESATIVAR o ruleset. O
 provado e que nao ha bypass DENTRO da regra. Desativar deixa rastro no audit log; contornar em
 silencio nao deixaria. E a diferenca entre as duas coisas e todo o alcance possivel sem uma

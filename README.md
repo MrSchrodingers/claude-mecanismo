@@ -685,6 +685,17 @@ O push partiu do token com `admin: true` — o ator governado em sua maior autor
 repositório — e foi recusado. Em rulesets o bypass só existe por concessão explícita, ao
 contrário da branch protection clássica, onde ignorar administradores é uma flag.
 
+**Precisão da afirmação, obtida por um segundo teste.** Ao reconferir no fim da sessão, um push
+direto foi *aceito* — e o controle mostrou por quê: o SHA empurrado já era o head de um PR com
+os required checks verdes, e o GitHub registrou a operação como `state: MERGED`. Empurrar um
+SHA que já satisfaz todos os requisitos é cumprir a política, não contorná-la. Com um commit
+novo e nenhum PR, a recusa se repete (`GH013`, exit 1, `main` inalterado).
+
+Logo a formulação correta não é "push direto falha", e sim: **um artefato que não passou por PR
+com os required checks verdes não chega a `main`.** Sem o controle, a primeira observação teria
+produzido uma refutação falsa de uma garantia verdadeira — o erro simétrico do que este projeto
+persegue, e igualmente caro.
+
 **O limite, que continua valendo:** quem tem `admin` pode *desativar* o ruleset. O que está
 provado é que não há bypass *dentro* da regra, não que a regra seja irremovível. Desativar
 deixa rastro no audit log; contornar em silêncio não deixaria — e essa diferença é todo o
