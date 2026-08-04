@@ -410,3 +410,47 @@ O padrao acumulado nesta sessao, agora com dezenove defeitos: os achados vieram 
 executa e de contexto separado. Nenhum veio de reler. E as correcoes produziram uma fracao
 relevante dos defeitos seguintes - o que significa que "corrigido" e um estado tao sujeito a
 verificacao quanto "escrito".
+
+---
+
+## Adendo 3 - a CI reprovou o ultimo commit, e o achado era do teste
+
+`55014c4` saiu vermelho. O defeito estava em `L12`, escrito uma hora antes para provar que
+`scope.commit` decide: ele ancorava o snapshot antigo em `HEAD~6`. Isso nao e uma propriedade -
+e uma DISTANCIA no historico, e o resultado muda sozinho a cada commit.
+
+Localmente `HEAD~6` caia antes de a suite de concorrencia existir, e o caso media o que dizia
+medir. Com um commit a mais, passou a cair depois: a claim resolveu, o caso passou a medir nada,
+e a contagem invariante reprovou. **A invariante de contagem foi quem denunciou** - sem ela, o
+caso teria virado verde vacuo em silencio.
+
+### O dado que nenhuma execucao isolada daria
+
+No MESMO SHA, o run de `pull_request` PASSOU e o de `push` REPROVOU. Em `pull_request` o checkout
+e de um merge commit, cuja ancestralidade e outra - dois valores de `HEAD~6` para o mesmo codigo.
+Foram precisos dois eventos com topologias distintas para expor a dependencia.
+
+Corrigido com ancora estavel por construcao (a raiz do repositorio) e uma PRECONDICAO EXPLICITA
+que afirma que a evidencia citada de fato nao existe naquele snapshot - sem ela o caso volta a
+poder medir nada, que foi exatamente como quebrou.
+
+### CORRECAO DE UMA AFIRMACAO MINHA, no commit que corrigiu o teste
+
+A mensagem de `716f9a2` afirma: "um merge pode proceder com o run de PR verde enquanto o de push
+esta vermelho". **Isso foi afirmado com mais forca do que a medicao sustenta.**
+
+O que foi MEDIDO: para `55014c4` existem dois check-runs chamados `verify` no mesmo SHA, um
+`success` e um `failure`, iniciados com 4 segundos de diferenca.
+
+O que NAO foi verificado: qual dos dois o `required_status_checks` avalia - o mais recente, o
+primeiro, ou a conjuncao. A documentacao nao foi localizada em fonte primaria (a URL consultada
+devolveu 404), e nao construi a medicao direta porque ela exigiria empurrar deliberadamente um
+commit vermelho para o branch protegido.
+
+Portanto o estado correto e: **ha dois check-runs homonimos por SHA, e a regra de desempate do
+portao e NAO VERIFICADA.** Se for "o mais recente", a ordem entre os dois runs decide - e eles
+comecam com segundos de diferenca, o que faz do desempate uma corrida. Isso e o suficiente para
+tratar como pendencia real, e nao o suficiente para afirmar que ha bypass.
+
+Registro o episodio porque ele e a regra de verificacao de fonte aplicada contra o proprio autor,
+duas horas depois de o ADR declarar que essa e a regra: enunciar nao executa.
