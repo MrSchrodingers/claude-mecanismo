@@ -82,43 +82,12 @@ mkdir -p "$(dirname "$LOCK")"; printf '%s\n' "$NOVO" > "$LOCK"
 
 # --- registro de hooks no settings.json, preservando as demais chaves ---
 S="$DEST/settings.json"; [ -f "$S" ] || echo '{}' > "$S"
-HOOKS_JSON="$(cat <<'JSON'
-{
-  "SessionStart": [{"hooks":[{"type":"command","command":"bash $HOME/.claude/hooks/session-integrity.sh","timeout":15}]}],
-  "PreToolUse": [
-    {"matcher":"Write|Edit|MultiEdit|NotebookEdit","hooks":[
-      {"type":"command","command":"bash $HOME/.claude/hooks/artifact-discipline.sh"},
-      {"type":"command","command":"bash $HOME/.claude/hooks/self-mod-audit.sh","timeout":5}]},
-    {"matcher":"Agent|Task|Bash|Workflow","hooks":[
-      {"type":"command","command":"bash $HOME/.claude/hooks/fable-guard.sh","timeout":5}]},
-    {"matcher":"Read","hooks":[
-      {"type":"command","command":"bash $HOME/.claude/hooks/read-budget.sh","timeout":10}]}
-  ],
-  "UserPromptSubmit": [{"hooks":[
-      {"type":"command","command":"bash $HOME/.claude/hooks/lentes.sh","timeout":5},
-      {"type":"command","command":"bash $HOME/.claude/hooks/ds4-notify.sh","timeout":5},
-      {"type":"command","command":"bash $HOME/.claude/hooks/graphify-scout-mode.sh","timeout":5}]}],
-  "PostToolUse": [
-    {"matcher":"Write|Edit|MultiEdit|NotebookEdit","hooks":[
-      {"type":"command","command":"bash $HOME/.claude/hooks/poka-yoke-lint.sh"},
-      {"type":"command","command":"bash $HOME/.claude/hooks/risk-trigger.sh"}]},
-    {"matcher":"Bash","hooks":[
-      {"type":"command","command":"bash $HOME/.claude/hooks/output-budget.sh"}]}
-  ],
-  "Stop": [{"hooks":[
-      {"type":"command","command":"bash $HOME/.claude/hooks/verify-gate.sh","timeout":200},
-      {"type":"command","command":"bash $HOME/.claude/hooks/ds4-notify.sh","timeout":5}]}],
-  "SubagentStop": [
-    {"hooks":[{"type":"command","command":"bash $HOME/.claude/hooks/subagent-probe.sh"}]},
-    {"matcher":"investigador|mapeador-dependencias|revisor-codigo|refutador|auditor-seguranca|analista-otimalidade|analista-fluxos|revisor-frontend|implementador|tdd",
-     "hooks":[{"type":"command","command":"bash $HOME/.claude/hooks/subagent-contract.sh"}]},
-    {"hooks":[{"type":"command","command":"bash $HOME/.claude/hooks/ds4-notify.sh","timeout":5}]}
-  ],
-  "SubagentStart": [{"hooks":[{"type":"command","command":"bash $HOME/.claude/hooks/subagent-probe.sh"}]}],
-  "Notification": [{"hooks":[{"type":"command","command":"bash $HOME/.claude/hooks/ds4-notify.sh","timeout":5}]}]
-}
-JSON
-)"
+# A lista de hooks NAO vive mais aqui. `install/hooks-spec.sh` e a fonte unica, consumida
+# tambem por `install/apply-managed.sh`. Duas copias da mesma lista divergiriam em silencio -
+# e o defeito central deste repositorio, e ele ja reincidiu como comentario obsoleto dentro de
+# um hook. `$HOME` sai LITERAL: quem o expande e o runtime, na execucao.
+HOOKS_JSON="$(bash "$(dirname "$0")/hooks-spec.sh" '$HOME/.claude/hooks')" || {
+  echo "ERRO: nao foi possivel gerar a especificacao de hooks"; exit 1; }
 TMPS="$(mktemp)"
 if jq --argjson h "$HOOKS_JSON" \
       --arg ad "$DEST/evidence-gate/adapters/code" --arg dd "$DEST/evidence-gate/adapters/documents" \

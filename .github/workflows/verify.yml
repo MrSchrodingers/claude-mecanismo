@@ -87,6 +87,8 @@ jobs:
         run: bash tests/unit/document-tools.sh
       - name: reprodutibilidade (metamorfico)
         run: bash tests/unit/reprodutibilidade.sh
+      - name: raiz de confianca (instalador managed, prefixo de ensaio)
+        run: bash tests/unit/managed.sh
       - name: propriedades (detectores invariantes a formatacao)
         run: bash tests/unit/propriedades.sh
       - name: claim ledger (evidencia citada existe)

@@ -14,6 +14,7 @@ O README referencia este arquivo em vez de duplicar numeros.
 | `tests/unit/concorrencia.sh` | 8 | 0 |
 | `tests/unit/claims.sh` | 15 | 0 |
 | `tests/unit/propriedades.sh` | 22 | 0 |
+| `tests/unit/managed.sh` | 23 | 0 |
 | `tests/unit/run.sh` | 45 | 0 |
 
 ## Mutacao

@@ -30,7 +30,8 @@ TMP="$(mktemp)"
   # exit code, que e estavel; a contagem fica marcada como variavel.
   for t in tests/unit/regressao-gate.sh tests/unit/document-tools.sh tests/unit/supply-chain.sh \
            tests/unit/reprodutibilidade.sh tests/unit/concorrencia.sh \
-           tests/unit/claims.sh tests/unit/propriedades.sh tests/unit/run.sh; do
+           tests/unit/claims.sh tests/unit/propriedades.sh \
+           tests/unit/managed.sh tests/unit/run.sh; do
     bash "$t" >/dev/null 2>&1; rc=$?
     if grep -q 'EXPECTED=\$((' "$t"; then n="variavel (ambiente)"
     else n="$(conta "$t")"; fi
