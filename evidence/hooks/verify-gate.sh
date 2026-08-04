@@ -164,12 +164,43 @@ fi
 AVISO_REPO=""
 REPO_VERIFY="$ROOT/.claude/verify.json"
 if [ -f "$REPO_VERIFY" ] && jq -e '.exec.command' "$REPO_VERIFY" >/dev/null 2>&1; then
-  CH="$(sha256sum "$REPO_VERIFY" 2>/dev/null | cut -c1-16)"
+  # SHA-256 COMPLETO, 64 hex. Ate 2026-08-04 este era o unico lugar do arquivo que truncava em
+  # 16 hex - 64 bits - enquanto a identidade do ambiente logo abaixo (G11, linha ~206) ja
+  # documentava que "truncar em 16 hex daria 64 bits, o que e outra propriedade". A mesma regra
+  # com dois tratamentos, e o truncado era justamente o que AUTORIZA EXECUCAO de um comando
+  # vindo do repositorio. Achado da auditoria externa, e a incoerencia era interna ao arquivo.
+  CH="$(sha256sum "$REPO_VERIFY" 2>/dev/null | cut -d' ' -f1)"
   APPROVED="$HOME/.claude/verify-cmd-approved"
   OWNER="$(stat -c '%U' "$APPROVED" 2>/dev/null || echo '')"
   if [ -n "$CH" ] && [ -f "$APPROVED" ] && [ "$OWNER" = "root" ] \
      && grep -qE "(^|[[:space:]])${CH}([[:space:]]|$)" "$APPROVED" 2>/dev/null; then
-    APLICAVEIS=("$REPO_VERIFY")   # o comando do projeto substitui os analisadores genericos
+    # --- CONTRATO EXPLICITO DE SUBSTITUICAO ---
+    # Antes: `APLICAVEIS=("$REPO_VERIFY")`. O comando do projeto SUBSTITUIA todos os analisadores
+    # genericos, em silencio. Um repositorio poliglota cujo verify.json so roda a suite de Python
+    # perdia a checagem de Node, Go e shell sem nenhum sinal - e a perda de cobertura tinha a
+    # forma de uma aprovacao. Agora a substituicao e DECLARADA e ESCOPADA: o projeto diz quais
+    # ecossistemas assume, e justifica por escrito. O que ele nao reivindica continua coberto.
+    SUBST="$(jq -r '.replaces[]? // empty' "$REPO_VERIFY" 2>/dev/null | tr '\n' ' ')"
+    JUST="$(jq -r '.coverage_justification // ""' "$REPO_VERIFY" 2>/dev/null)"
+    if [ -z "$SUBST" ] || [ -z "$JUST" ]; then
+      AVISO_REPO="
+NOTA: $ROOT/.claude/verify.json esta APROVADO, mas nao declara o contrato de substituicao.
+NAO foi executado, e os analisadores genericos seguem valendo.
+Um comando de projeto que substitui a cobertura generica precisa dizer o que assume:
+  \"replaces\": [\"python\", \"node\"]         # ecossistemas que ele passa a cobrir
+  \"coverage_justification\": \"...\"          # por que a cobertura dele basta para esses
+Ecossistemas fora de 'replaces' continuam sendo verificados pelos adaptadores genericos."
+    else
+      MANTIDOS=()
+      for a in "${APLICAVEIS[@]}"; do
+        eco="$(jq -r '.ecosystem // "?"' "$a" 2>/dev/null)"
+        case " $SUBST " in
+          *" $eco "*) : ;;                    # o projeto reivindicou este ecossistema
+          *) MANTIDOS+=("$a") ;;              # nao reivindicado: cobertura generica permanece
+        esac
+      done
+      APLICAVEIS=("$REPO_VERIFY" ${MANTIDOS[@]+"${MANTIDOS[@]}"})
+    fi
   else
     MOTIVO="nao esta aprovado"
     [ -z "$CH" ] && MOTIVO="nao pode ser conferido (sha256sum indisponivel) - fail-closed"
@@ -180,7 +211,11 @@ NOTA: $ROOT/.claude/verify.json existe e $MOTIVO. NAO foi executado.
 Digest: ${CH:-<indisponivel>}
 Se voce LEU o comando e ele e legitimo, o USUARIO aprova (caminho ABSOLUTO: dentro de sudo o
 \$HOME e o de root; apague o arquivo antes se existir com dono errado, porque append nao troca dono):
-  sudo sh -c 'echo \"${CH}  # $(basename "$ROOT")\" >> $HOME/.claude/verify-cmd-approved && chown root:root $HOME/.claude/verify-cmd-approved'"
+  sudo sh -c 'echo \"${CH}  # $(basename "$ROOT")\" >> $HOME/.claude/verify-cmd-approved && chown root:root $HOME/.claude/verify-cmd-approved'
+
+LIMITE DECLARADO: o digest cobre os BYTES de verify.json, nao os bytes que ele manda executar.
+Um verify.json que roda \`bash scripts/verify.sh\` permanece aprovado enquanto esse script muda.
+Fechar isso exige digest transitivo ou sandbox - nao esta implementado (ver README, roadmap)."
   fi
 fi
 

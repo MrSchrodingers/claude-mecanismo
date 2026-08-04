@@ -10,12 +10,19 @@ cd "$(dirname "$0")/../.." || exit 1
 # LOCK: suites deste repo nao sao reentrantes entre si (tests/lib/lock.sh).
 . "$(dirname "$0")/../lib/lock.sh"
 ORIG="install/apply.sh"; REG="tests/unit/regressao-gate.sh"
-TMP="$(mktemp -d)"; trap 'cp -f "$TMP/orig.sh" "$ORIG" 2>/dev/null; rm -rf "$TMP"' EXIT
+# SEGUNDO ALVO: o instalador MANAGED, cuja garantia vive em outra suite. Sao arquivos e
+# propriedades distintos - misturar os dois num unico par (ORIG, REG) faria um mutante do managed
+# ser cobrado contra a regressao do gate, e o kill nunca seria atribuivel.
+ORIG_M="install/apply-managed.sh"; REG_M="tests/unit/managed.sh"
+TMP="$(mktemp -d)"
+trap 'cp -f "$TMP/orig.sh" "$ORIG" 2>/dev/null; cp -f "$TMP/orig-managed.sh" "$ORIG_M" 2>/dev/null; rm -rf "$TMP"' EXIT
 cp -f "$ORIG" "$TMP/orig.sh"
-P=0; F=0; EXPECTED_MUTANTS=1
+cp -f "$ORIG_M" "$TMP/orig-managed.sh"
+P=0; F=0; EXPECTED_MUTANTS=2
 
 echo "== baseline =="
 if bash "$REG" >/dev/null 2>&1; then echo "  PASS  baseline verde"; else echo "  FAIL  baseline vermelho; abortando"; exit 1; fi
+if ! bash "$REG_M" >/dev/null 2>&1; then echo "  FAIL  baseline do managed vermelho; abortando"; exit 1; fi
 
 echo "== mutacao do instalador =="
 # MI1: o portao do dry-run vira filtro - volta a cair na etapa de convergencia
@@ -33,6 +40,43 @@ else
   else echo "  FAIL  MI1: reprovou, mas nao em G10 - kill nao atribuivel"; F=$((F+1)); fi
 fi
 cp -f "$TMP/orig.sh" "$ORIG"
+
+echo "== mutacao do instalador managed =="
+# MI2: a publicacao volta a acontecer ANTES dos portoes - o defeito que a auditoria externa
+# encontrou. A arvore ativa passa a ser reescrita antes de qualquer checagem, e um deploy
+# reprovado a deixa parcialmente atualizada.
+#
+# ESCOLHA DO MUTANTE. O caminho obvio - `STAGE="$OPT"` - reprovaria tambem o DEPLOY BEM-SUCEDIDO
+# (a conformidade passaria a olhar uma arvore que a publicacao ja moveu), e MG15 morreria na sua
+# propria precondicao, nao na propriedade. Este mutante mantem o caminho de sucesso intacto e
+# ataca exatamente a ordem escrita-versus-portao, que e a garantia sob teste.
+cp -f "$TMP/orig-managed.sh" "$ORIG_M"
+python3 - "$ORIG_M" <<'PYM'
+import sys
+p = sys.argv[1]; s = open(p, encoding="utf-8").read()
+alvo = 'if [ "$REAL" -eq 1 ]; then chown -R root:root "$STAGE" || exit 1; fi'
+if s.count(alvo) != 1:
+    sys.exit("ANCORA NAO CASOU (%d ocorrencias)" % s.count(alvo))
+open(p, "w", encoding="utf-8").write(s.replace(
+    alvo, alvo + '\nrm -rf "$OPT"; cp -a "$STAGE" "$OPT"   # MUTANTE: publica ANTES dos portoes'))
+PYM
+if cmp -s "$TMP/orig-managed.sh" "$ORIG_M"; then
+  echo "  FAIL  MI2 NAO FOI APLICADO (padrao nao casa)"; F=$((F+1))
+elif ! bash -n "$ORIG_M" 2>/dev/null; then
+  echo "  FAIL  MI2 nao compila"; F=$((F+1))
+else
+  out="$(bash "$REG_M" 2>&1)"; rc=$?
+  if [ "$rc" -eq 0 ]; then
+    echo "  FAIL  MI2 SOBREVIVEU - deploy reprovado altera a arvore ativa sem sinal"; F=$((F+1))
+  elif printf '%s' "$out" | grep -q "FAIL.*BYTE A BYTE identica"; then
+    echo "  PASS  MI2 morto pelo caso certo (MG15)"; P=$((P+1))
+  else
+    echo "  FAIL  MI2: reprovou, mas nao em MG15 - kill nao atribuivel"; F=$((F+1))
+    printf '%s\n' "$out" | grep FAIL | sed 's/^/        /'
+  fi
+fi
+cp -f "$TMP/orig-managed.sh" "$ORIG_M"
+
 echo
 printf 'mutantes_esperados=%s  mortos=%s  falhas=%s\n' "$EXPECTED_MUTANTS" "$P" "$F"
 if [ "$F" -eq 0 ] && [ "$P" -eq "$EXPECTED_MUTANTS" ]; then echo "mutacao do instalador verde"; exit 0

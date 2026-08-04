@@ -4,7 +4,7 @@ claim_id: C-005
 claim: Dependencia estrutural ausente produz NAO VERIFICADO, nunca sucesso silencioso.
 type: security-property
 scope:
-  commit: c3ffe52
+  subject_snapshot: c3ffe5202bc87e59a61d1a2bcac0f4c8b65953af
   platforms:
   - local-linux
   - github-ubuntu-24.04
@@ -17,7 +17,10 @@ evidence:
   - M5
   - M6
   - M9
-  ci_run: https://github.com/MrSchrodingers/evidence-gate/actions/workflows/verify.yml
+  ci:
+    run_id: 30924006484
+    head_sha: c3ffe5202bc87e59a61d1a2bcac0f4c8b65953af
+    workflow: verify
 warrant: 'Tres formas independentes da mesma classe: tabela de adaptadores ausente (G5), jq ausente (G6)
   e git ausente com .git presente (G9). Cada mutante reintroduz o exit 0 mudo e mata o caso correspondente.
   A distincao que sustenta a propriedade: ausencia de ORACULO e nao-verificacao; ausencia de FRONTEIRA

@@ -241,9 +241,59 @@ chk "  --enforce REPROVA: a politica declara hook que nao esta no disco" "$rc" 1
 chk "  e allowManagedHooksOnly nao foi ativado" \
     "$(jq -r '.allowManagedHooksOnly' "$FK9/etc/claude-code/managed-settings.json" 2>/dev/null || echo ausente)" "ausente"
 
+echo "== MG15. deploy REPROVADO deixa a arvore ativa BYTE A BYTE inalterada =="
+# ACHADO DA AUDITORIA EXTERNA (2026-08-04). O laco de copia escrevia DIRETO na arvore ativa e os
+# portoes rodavam depois; o proprio script admitia a consequencia no caminho de falha:
+# "ATENCAO: arquivos sob $OPT PODEM ter sido escritos antes desta checagem". Um deploy reprovado
+# podia deixar a arvore com alguns componentes na versao nova e outros na antiga - e a politica
+# velha continuava apontando para ela. A propriedade que faltava:
+#
+#     DeployFail  =>  ActiveState_depois == ActiveState_antes
+#
+# Este caso a exercita como PROPRIEDADE, comparando o digest da arvore inteira antes e depois -
+# e nao conferindo um arquivo escolhido a dedo, que passaria mesmo com metade da arvore trocada.
+arvore_digest(){ # $1 = raiz; "" se nao existe
+  [ -d "$1" ] || { echo "AUSENTE"; return; }
+  ( cd "$1" && find . -type f -exec sha256sum {} + 2>/dev/null | LC_ALL=C sort -k2 | sha256sum | cut -d' ' -f1 )
+}
+FK15="$T/raiz15"; mkdir -p "$FK15"
+rc=$(MANAGED_PREFIX="$FK15" bash "$AM" >/dev/null 2>&1; echo $?)
+chk "deploy inicial instala (o caso precisa de uma arvore ativa para proteger)" "$rc" 0
+ATIVA15="$FK15/opt/evidence-gate"
+ANTES15="$(arvore_digest "$ATIVA15")"
+chk "  a arvore ativa existe e tem digest (senao nao ha o que preservar)" \
+    "$([ "$ANTES15" != "AUSENTE" ] && [ -n "$ANTES15" ] && echo sim || echo nao)" "sim"
+
+# SEGUNDO DEPLOY QUE REPROVA NO ULTIMO PORTAO. O manifesto e valido e POPULOSO - a reprovacao vem
+# do portao de hook ausente (mesmo mecanismo de MG14), que roda DEPOIS de toda a copia. E o pior
+# caso possivel para a propriedade: se a copia fosse direto na ativa, a essa altura ela ja teria
+# sido reescrita inteira.
+rc=$(MANAGED_PREFIX="$FK15" MANAGED_MANIFEST="$SEMHOOK" bash "$AM" >/dev/null 2>&1; echo $?)
+chk "  o segundo deploy REPROVA no portao (precondicao do caso)" "$rc" 1
+DEPOIS15="$(arvore_digest "$ATIVA15")"
+chk "  e a arvore ativa esta BYTE A BYTE identica a antes da tentativa" "$DEPOIS15" "$ANTES15"
+
+# ANTIVACUIDADE: se o segundo deploy nao tivesse NADA de diferente a escrever, os digests seriam
+# iguais mesmo com o codigo antigo, e o caso mediria zero. O manifesto degradado tem uma linha a
+# menos - logo, um deploy bem-sucedido dele PRODUZIRIA uma arvore diferente.
+FK15B="$T/raiz15b"; mkdir -p "$FK15B"
+MANAGED_PREFIX="$FK15B" MANAGED_MANIFEST="$SEMHOOK" bash "$AM" --dry-run >/dev/null 2>&1
+chk "  e o manifesto degradado descreve MESMO uma arvore diferente (nao vacuo)" \
+    "$([ "$(awk -F'\t' '!/^#/ && ($1=="hook"||$1=="adapter"||$1=="doctool")' "$SEMHOOK" | wc -l)" \
+       -ne "$(awk -F'\t' '!/^#/ && ($1=="hook"||$1=="adapter"||$1=="doctool")' install/manifest.lock | wc -l)" ] \
+       && echo sim || echo nao)" "sim"
+
+echo "== MG16. deploy reprovado nao deixa area de staging orfa =="
+# Staging orfa sob /opt seria lixo root-owned acumulando a cada tentativa falha - e, pior, um
+# diretorio com os hooks completos fora de qualquer inspecao do --verify.
+chk "nenhum diretorio *.stage.* remanescente" \
+    "$(find "$FK15/opt" -maxdepth 1 -name 'evidence-gate.stage.*' 2>/dev/null | wc -l | tr -d ' ')" "0"
+chk "  nem *.anterior.* (a troca limpa o que afastou)" \
+    "$(find "$FK15/opt" -maxdepth 1 -name 'evidence-gate.anterior.*' 2>/dev/null | wc -l | tr -d ' ')" "0"
+
 echo
 echo "================ PASS=$P  FAIL=$F ================"
-EXPECTED=46
+EXPECTED=53
 if [ "$P" -ne "$EXPECTED" ]; then
   echo "CONTAGEM INESPERADA: PASS=$P, esperado $EXPECTED. Caso removido ou nao executado."
   exit 1

@@ -48,6 +48,10 @@ if [ -n "$PREFIX" ]; then
   PREFIX="${PREFIX%/}"
 fi
 OPT="$PREFIX/opt/evidence-gate"
+# RAIZ e a arvore que as funcoes de validacao INSPECIONAM. Em `--verify` e a arvore ativa; no
+# deploy passa a ser a area de staging, e so vira a ativa depois de todo portao ter passado.
+# Sem esta indirecao, validar antes de publicar seria impossivel sem duplicar as funcoes.
+RAIZ="$OPT"
 ETC="$PREFIX/etc/claude-code"
 SETTINGS="$ETC/managed-settings.json"
 REAL=0; [ -z "$PREFIX" ] && REAL=1   # prefixo vazio = raiz de verdade
@@ -115,8 +119,8 @@ valida_manifesto(){ # ecoa violacoes; retorna != 0 se houver qualquer uma
     esac
     # 2. confinamento efetivo. A checagem de forma sozinha nao cobre symlink no meio do
     #    caminho; `realpath -m` resolve e a comparacao e sobre o caminho REAL.
-    confinado "$OPT/$(destino_managed "$destino")" "$OPT" \
-      || { echo "  DESTINO ESCAPA DE $OPT: [$destino]"; ruins=$((ruins+1)); continue; }
+    confinado "$RAIZ/$(destino_managed "$destino")" "$RAIZ" \
+      || { echo "  DESTINO ESCAPA DE $RAIZ: [$destino]"; ruins=$((ruins+1)); continue; }
     confinado "$REPO/$origem" "$REPO" \
       || { echo "  ORIGEM ESCAPA DE $REPO: [$origem]"; ruins=$((ruins+1)); continue; }
     [ -e "$REPO/$origem" ] || { echo "  ORIGEM INEXISTENTE: [$origem]"; ruins=$((ruins+1)); }
@@ -168,7 +172,7 @@ conformidade_managed(){   # ecoa "ok N" ou lista divergencias; nunca escreve
   local div=0 n=0 dono_ruim=0 grav=0
   while IFS=$'\t' read -r _tipo origem destino sha; do
     n=$((n+1))
-    local alvo="$OPT/$(destino_managed "$destino")"
+    local alvo="$RAIZ/$(destino_managed "$destino")"
     if [ ! -e "$alvo" ]; then echo "  AUSENTE  $alvo"; div=$((div+1)); continue; fi
     local d
     if [ -d "$alvo" ]; then d="$(cd "$alvo" && find . -type f -exec sha256sum {} + | LC_ALL=C sort -k2 | sha256sum | cut -d' ' -f1)"
@@ -232,16 +236,36 @@ if ! valida_manifesto; then
   echo "      confiavel. Regenere com 'bash install/manifest.sh' e inspecione o diff." >&2
   exit 1
 fi
-mkdir -p "$OPT" "$ETC" || exit 1
+# --- DEPLOY EM STAGING ---------------------------------------------------------------------
+# ATE 2026-08-04 este laco copiava DIRETO na arvore ativa e os portoes rodavam depois. O proprio
+# script admitia a consequencia no caminho de falha: "ATENCAO: arquivos sob $OPT PODEM ter sido
+# escritos antes desta checagem". Isto e, um deploy reprovado deixava a arvore ativa PARCIALMENTE
+# atualizada - alguns componentes na versao nova, outros na antiga - com a politica velha ainda
+# apontando para ela. A auditoria externa nomeou a propriedade que faltava:
+#
+#     DeployFail  =>  ActiveState_depois == ActiveState_antes
+#
+# Agora a construcao inteira acontece numa area de staging irmã, todo portao roda LA, e a arvore
+# ativa so e tocada quando nada mais pode reprovar. Reprovou: a area de staging e descartada e a
+# ativa nunca foi aberta.
+STAGE="$OPT.stage.$$"
+# TRAP: staging orfa sob /opt seria lixo root-owned acumulando a cada falha. Removida em
+# QUALQUER saida - inclusive nos `exit 1` dos portoes abaixo, que sao o caminho esperado.
+trap 'rm -rf "$STAGE" 2>/dev/null || true' EXIT
+rm -rf "$STAGE" || exit 1
+mkdir -p "$STAGE" "$ETC" || exit 1
+RAIZ="$STAGE"          # a partir daqui, validar significa validar o STAGING
 while IFS=$'\t' read -r _tipo origem destino _sha; do
-  alvo="$OPT/$(destino_managed "$destino")"
+  alvo="$STAGE/$(destino_managed "$destino")"
   mkdir -p "$(dirname "$alvo")"
   if [ -d "$origem" ]; then rm -rf "$alvo"; cp -a "$origem" "$alvo"
   else cp -f "$origem" "$alvo"; fi
   case "$alvo" in *.sh|*/document-tools/*) chmod 0755 "$alvo" ;; *) chmod 0644 "$alvo" ;; esac
 done < <(tipos_politica)
-find "$OPT" -type d -exec chmod 0755 {} + 2>/dev/null || true
-if [ "$REAL" -eq 1 ]; then chown -R root:root "$OPT"; fi
+find "$STAGE" -type d -exec chmod 0755 {} + 2>/dev/null || true
+# POSSE APLICADA NO STAGING, e nao depois da publicacao: se `chown` falhasse com a arvore ja
+# ativa, o resultado seria uma politica ativa com arquivos do ator - o oposto da garantia.
+if [ "$REAL" -eq 1 ]; then chown -R root:root "$STAGE" || exit 1; fi
 
 # --- PORTAO ANTES DA ESCRITA DA POLITICA -------------------------------------------------
 # ORDEM DELIBERADA, e o motivo e um defeito que este repositorio ja pagou. Na primeira versao
@@ -281,10 +305,15 @@ if [ "$div" -ne 0 ] || [ "$dono" -ne 0 ] || [ "$grav" -ne 0 ]; then
   # arquivos ja haviam sido copiados. O portao protege a POLITICA, nao a arvore em $OPT - e uma
   # mensagem de erro que promete mais do que o codigo entrega e a mesma classe de defeito que
   # este repositorio persegue, agravada por aparecer justamente no caminho de falha.
+  # MENSAGEM CORRIGIDA DE NOVO (2026-08-04, auditoria externa). A versao anterior avisava que
+  # arquivos sob $OPT "PODEM ter sido escritos antes desta checagem" - e era verdade, porque a
+  # copia ia direto na arvore ativa. Com staging isso deixou de ser possivel, e a frase honesta
+  # mudou junto. A anterior ja tinha sido corrigida uma vez por prometer MAIS do que o codigo
+  # entregava; esta so pode ser publicada porque o codigo passou a entregar.
   echo "ERRO: deploy incompleto." >&2
   echo "      A POLITICA nao foi escrita e allowManagedHooksOnly NAO foi ativado." >&2
-  echo "      ATENCAO: arquivos sob $OPT PODEM ter sido escritos antes desta checagem." >&2
-  echo "      Para limpar: bash install/apply-managed.sh --revert" >&2
+  echo "      A arvore ativa em $OPT NAO foi tocada: tudo foi construido em $STAGE," >&2
+  echo "      que sera descartado. Nao ha o que limpar." >&2
   exit 1
 fi
 
@@ -313,18 +342,53 @@ HOOKS_JSON="$(bash install/hooks-spec.sh "$OPT/hooks")" || exit 1
 # o disco. A propriedade existia apenas no oraculo do teste (MG4), exercitada sobre o manifesto
 # real, onde era vacuamente verdadeira: a garantia morava no TESTE e nao no ARTEFATO, que e a
 # inversao que este repositorio persegue. Agora quem DECLARA o consumo e quem e cobrado.
+#
+# A POLITICA DECLARA O CAMINHO ATIVO ($OPT), mas quem existe neste instante e o STAGING. A
+# presenca e conferida no staging TRADUZINDO o prefixo - e nao gerando a politica com o caminho
+# de staging, que iria parar no managed-settings.json e apontaria para um diretorio que sera
+# apagado. Conferir no lugar errado seria a mesma familia de defeito que este portao ja corrigiu:
+# uma checagem que passa sem tocar no que decide.
 AUSENTES=0
 while IFS= read -r _cmd; do
   _p="${_cmd#bash }"
-  [ -f "$_p" ] || { echo "  HOOK DECLARADO NA POLITICA E AUSENTE NO DISCO: $_p" >&2; AUSENTES=$((AUSENTES+1)); }
+  _p_stage="$STAGE${_p#"$OPT"}"
+  [ -f "$_p_stage" ] || { echo "  HOOK DECLARADO NA POLITICA E AUSENTE NO DISCO: $_p" >&2; AUSENTES=$((AUSENTES+1)); }
 done < <(printf '%s' "$HOOKS_JSON" | jq -r '[..|objects|select(has("command"))|.command]|unique[]')
 if [ "$AUSENTES" -ne 0 ]; then
   echo "ERRO: a politica declara $AUSENTES hook(s) inexistentes em $OPT." >&2
   echo "      Nada foi escrito e allowManagedHooksOnly NAO foi ativado." >&2
+  echo "      A arvore ativa NAO foi tocada; o staging sera descartado." >&2
   echo "      Politica apontando para o vazio COM enforcement ligado e o mecanismo inteiro" >&2
   echo "      desligado com aparencia de ligado. Regenere o manifesto e reinstale." >&2
   exit 1
 fi
+
+# --- PUBLICACAO ------------------------------------------------------------------------------
+# Ultimo portao passou: a partir daqui a arvore ativa pode ser tocada. A troca e por `mv` dentro
+# do MESMO diretorio pai, que e rename(2) - nao ha copia, nao ha janela de arvore meio-escrita.
+#
+# LIMITE DECLARADO, e ele e real: `rename(2)` nao substitui diretorio nao vazio, entao a troca
+# sao DUAS chamadas (ativa->anterior, staging->ativa) e nao uma. Entre elas ha uma janela de
+# microssegundos em que $OPT nao existe. Isto NAO e atomicidade plena, e chamar de atomica seria
+# a imprecisao que este repositorio persegue. O que esta garantido e a propriedade que faltava:
+#   - falha em QUALQUER portao => a ativa nunca foi aberta;
+#   - falha na segunda troca    => a anterior e recolocada (rollback abaixo);
+#   - nunca existe arvore ativa com metade dos componentes na versao nova.
+# Atomicidade plena exigiria $OPT ser um symlink trocado por rename - muda o layout em disco,
+# o `--verify`, o `--revert` e a checagem de posse. Nao feito aqui; registrado no roadmap.
+ANTERIOR="$OPT.anterior.$$"
+if [ -d "$OPT" ]; then
+  mv -f "$OPT" "$ANTERIOR" || { echo "ERRO: nao foi possivel afastar a arvore ativa; nada mudou." >&2; exit 1; }
+fi
+if ! mv -f "$STAGE" "$OPT"; then
+  echo "ERRO: a publicacao falhou apos afastar a arvore ativa." >&2
+  if [ -d "$ANTERIOR" ]; then
+    mv -f "$ANTERIOR" "$OPT" && echo "      ROLLBACK: a arvore anterior foi recolocada em $OPT." >&2
+  fi
+  exit 1
+fi
+rm -rf "$ANTERIOR" 2>/dev/null || true
+RAIZ="$OPT"   # publicado: validar volta a significar validar a arvore ativa
 
 # BACKUP SO DO QUE NAO E NOSSO. Defeito encontrado por MG8: a condicao era apenas "existe e
 # ainda nao ha backup", entao a SEGUNDA execucao (deploy e depois --enforce) tratava o arquivo

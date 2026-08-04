@@ -4,7 +4,7 @@ claim_id: C-007
 claim: O modo --dry-run do instalador nao altera estado algum, byte a byte.
 type: security-property
 scope:
-  commit: c3ffe52
+  subject_snapshot: c3ffe5202bc87e59a61d1a2bcac0f4c8b65953af
   platforms:
   - local-linux
   - github-ubuntu-24.04
@@ -13,7 +13,10 @@ evidence:
   - G10
   mutants:
   - MI1
-  ci_run: https://github.com/MrSchrodingers/evidence-gate/actions/workflows/verify.yml
+  ci:
+    run_id: 30924006484
+    head_sha: c3ffe5202bc87e59a61d1a2bcac0f4c8b65953af
+    workflow: verify
 warrant: G10 compara o digest do diretorio inteiro antes e depois, exige que o orfao continue no disco,
   que o plano ANUNCIE a remocao, que nenhum backup seja criado, e - decisivo - que o dry-run tenha de
   fato executado (exit 0). Sem essa ultima assercao um cd falho tornava 'estado identico' trivialmente

@@ -5,21 +5,38 @@ claim: Hooks de plugin SOMAM aos hooks de escopo de usuario; nao os sobrepoem. A
   do ADR 0022 nao se realizou.
 type: runtime-observation
 scope:
-  commit: c3ffe52
+  subject_snapshot: c3ffe5202bc87e59a61d1a2bcac0f4c8b65953af
+  # ESCOPO CORRIGIDO (auditoria externa, 2026-08-04). Declarava tambem `github-ubuntu-24.04`,
+  # e a observacao que sustenta esta alegacao NAO rodou la: o Claude Code foi executado numa
+  # maquina Linux local (ver o cabecalho da observacao, "Ambiente"). O GitHub Actions valida o
+  # REPOSITORIO e as suites; ele nao reproduz o runtime cujo comportamento esta sendo afirmado.
+  # Declarar o runner como plataforma da alegacao seria atribuir alcance a uma medicao que
+  # nunca ocorreu ali - exatamente a forma de exagero que este ledger existe para impedir.
   platforms:
   - local-linux
-  - github-ubuntu-24.04
+  runtime:
+    claude_code: 2.1.220
+    node: v22.19.0
 evidence:
   observation:
     command: claude -p --output-format stream-json --include-hook-events --verbose [--plugin-dir <sonda>]
     recorded: evidence/observations/2026-08-04-precedencia-de-hooks.md
-  ci_run: https://github.com/MrSchrodingers/evidence-gate/actions/workflows/verify.yml
+    blob_sha: a645cc0607bf1dc9a402b8a194220e4916aae42f
+    line_start: 48
+    line_end: 76
+  ci:
+    run_id: 30924006484
+    head_sha: c3ffe5202bc87e59a61d1a2bcac0f4c8b65953af
+    workflow: verify
 warrant: 'Predicao registrada ANTES do tratamento e confirmada exatamente: SessionStart 2->3, UserPromptSubmit
   4->5, Stop 3->4, com os tres marcadores da sonda presentes. Duas fontes independentes: os eventos do
   runtime e o heartbeat gravado pelo hook de usuario, que continuou incrementando - se plugin sobrepusesse
   o escopo de usuario, o heartbeat teria parado.'
 limitations:
 - uma versao de runtime (2.1.220) e uma plataforma (Linux)
+- 'a CI e ambiente de validacao do LEDGER, nao ambiente onde este comportamento foi reproduzido:
+  o GitHub Actions nao executa o runtime Claude Code. `ci.run_id` atesta que as suites deste
+  repositorio passaram naquele commit, e nada sobre a precedencia de hooks.'
 - 'nao cobre managed settings com allowManagedHooksOnly, cuja semantica documentada e oposta: bloqueia
   hooks de usuario E de plugin'
 - a ORDEM de execucao dentro de um mesmo evento nao foi medida, apenas o conjunto

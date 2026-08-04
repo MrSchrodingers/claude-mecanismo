@@ -5,14 +5,17 @@ claim: Declarar 'nao verificado' e uma saida valida do contrato de subagente, e 
   sem lastro.
 type: method-rule
 scope:
-  commit: c3ffe52
+  subject_snapshot: c3ffe5202bc87e59a61d1a2bcac0f4c8b65953af
   platforms:
   - local-linux
   - github-ubuntu-24.04
 evidence:
   mutants:
   - MC3
-  ci_run: https://github.com/MrSchrodingers/evidence-gate/actions/workflows/verify.yml
+  ci:
+    run_id: 30924006484
+    head_sha: c3ffe5202bc87e59a61d1a2bcac0f4c8b65953af
+    workflow: verify
 warrant: 'A mensagem de bloqueio do proprio hook promete por escrito que ''nao verificado e resposta valida'',
   e o CLAUDE.md secao 4 a declara valida. Medido: antes da correcao, um retorno declarando nao-verificacao
   recebia exit 2 IDENTICO ao de prosa vazia, de modo que o unico caminho estavel para atravessar o portao

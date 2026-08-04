@@ -4,7 +4,7 @@ claim_id: C-001
 claim: Um veredito de FALHA em cache nunca e reutilizado como sucesso numa parada posterior.
 type: empirical-invariant
 scope:
-  commit: c3ffe52
+  subject_snapshot: c3ffe5202bc87e59a61d1a2bcac0f4c8b65953af
   platforms:
   - local-linux
   - github-ubuntu-24.04
@@ -13,7 +13,10 @@ evidence:
   - G1
   mutants:
   - M1
-  ci_run: https://github.com/MrSchrodingers/evidence-gate/actions/workflows/verify.yml
+  ci:
+    run_id: 30924006484
+    head_sha: c3ffe5202bc87e59a61d1a2bcac0f4c8b65953af
+    workflow: verify
 warrant: G1 executa o hook duas vezes sobre o MESMO snapshot quebrado e exige exit 2 nas duas. M1 remove
   a exigencia de que so o veredito 'pass' seja reutilizavel e G1 reprova - logo G1 testa esta garantia,
   e nao outra coisa.

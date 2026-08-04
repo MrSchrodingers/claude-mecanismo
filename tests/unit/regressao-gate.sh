@@ -205,12 +205,96 @@ novo_repo g12b
 printf 'def f():\n    return indefinido\n' > quebrado.py; git add -A; git commit -qm "quebrado"
 chk "  SEM remoto: inerte segue legitimo (ausencia de fronteira, nao lacuna)" "$(gate false)" 0
 
+echo "== G13. a aprovacao de verify.json exige SHA-256 COMPLETO, nao prefixo de 16 hex =="
+# Ate 2026-08-04 o gate comparava `sha256sum ... | cut -c1-16` - 64 bits - para autorizar a
+# EXECUCAO de um comando vindo do repositorio, enquanto a identidade do ambiente no mesmo arquivo
+# ja documentava que truncar seria "outra propriedade". Achado da auditoria externa.
+#
+# COMO ISTO E TESTAVEL SEM ROOT: o caminho aprovado exige lista pertencente a root, e a suite nao
+# tem sudo. Mesma tecnica do caso 5 de tests/unit/run.sh - um MUTANTE com a checagem de posse
+# fixada em "root" torna o caminho alcancavel, e o que resta sob teste e o DIGESTO. O mutante e
+# o instrumento aqui, nao o alvo.
+MUT13="$TMP/gate-sem-posse.sh"
+python3 - "$GATE" "$MUT13" <<'PYEOF'
+import re, sys
+s = open(sys.argv[1]).read()
+s2 = re.sub(r'OWNER="\$\(stat[^\n]*\)"', 'OWNER="root"', s)
+assert s2 != s, "ANCORA NAO CASOU - o mutante nao removeu a checagem de posse"
+open(sys.argv[2], "w").write(s2)
+PYEOF
+chk "instrumento construido (checagem de posse fixada em root)" \
+    "$(grep -c 'OWNER="root"' "$MUT13")" "1"
+
+g13_repo(){  # monta repo com verify.json que marca um arquivo; $1 = json extra
+  novo_repo "$1x"; mkdir -p .claude
+  MARK13="$TMP/G13_EXECUTOU"; rm -f "$MARK13"
+  jq -n --arg m "$MARK13" --argjson extra "$2" \
+    '{exec:{command:"sh",args:["-c",("printf ok > "+$m)]}} + $extra' > .claude/verify.json
+  printf 'def f():\n    return 1\n' > app.py; git add -A; git commit -qm b
+  printf '# muda\n' >> app.py; git add -A
+}
+# NAO ECOA NADA, e por isso NAO pode ser chamada dentro de `$( )`. Publica em EXECUTOU13 e
+# SAIDA13, que sao lidas depois. E a mesma armadilha que o cabecalho deste arquivo ja documenta
+# para `novo_repo`: command substitution roda num SUBSHELL, e toda atribuicao morre com ele.
+# Paguei-a de novo aqui - a primeira versao lia $SAIDA13 e explodia em 'unbound variable'.
+EXECUTOU13=""; SAIDA13=""
+g13_roda(){  # $1 = conteudo da lista de aprovacao
+  # HOME NOVO A CADA CHAMADA: o ledger do gate vive sob $HOME, e um veredito `pass` do MESMO
+  # snapshot faz a execucao seguinte sair no cache antes de qualquer analise.
+  H13="$TMP/h13"; rm -rf "$H13"; mkdir -p "$H13/.claude/logs"
+  printf '%s\n' "$1" > "$H13/.claude/verify-cmd-approved"
+  rm -f "$MARK13"
+  SAIDA13="$( printf '{}' | HOME="$H13" bash "$MUT13" 2>&1 )"
+  EXECUTOU13="$([ -f "$MARK13" ] && echo sim || echo nao)"
+}
+
+CONTRATO='{"replaces":["python"],"coverage_justification":"fixture"}'
+g13_repo g13 "$CONTRATO"
+D13_PLENO="$(sha256sum .claude/verify.json | cut -d' ' -f1)"
+D13_CURTO="$(printf '%s' "$D13_PLENO" | cut -c1-16)"
+# CONTROLE POSITIVO PRIMEIRO: sem ele, um gate que nunca executasse nada passaria no negativo.
+g13_roda "$D13_PLENO"
+chk "  com o digest COMPLETO na lista, o comando do projeto executa" "$EXECUTOU13" "sim"
+g13_roda "$D13_CURTO"
+chk "  com o PREFIXO de 16 hex, NAO executa (o comprimento decide)" "$EXECUTOU13" "nao"
+
+echo "== G14. aprovado sem CONTRATO DE SUBSTITUICAO nao substitui a cobertura generica =="
+# `APLICAVEIS=("$REPO_VERIFY")` trocava TODOS os analisadores genericos pelo comando do projeto,
+# em silencio. Num repo poliglota, um verify.json que so roda a suite de Python apagava a
+# checagem de Node, Go e shell - e a perda de cobertura tinha a forma de uma aprovacao.
+g13_repo g14 '{}'
+D14="$(sha256sum .claude/verify.json | cut -d' ' -f1)"
+g13_roda "$D14"
+chk "sem 'replaces'/'coverage_justification', o comando NAO executa" "$EXECUTOU13" "nao"
+chk "  e o gate DIZ o que falta (nao falha em silencio)" \
+    "$(printf '%s' "$SAIDA13" | grep -c 'contrato de substituicao')" "1"
+
+echo "== G15. ecossistema fora de 'replaces' continua coberto pelo analisador generico =="
+# A propriedade que o contrato compra: o projeto assume o que declara, e SO isso.
+novo_repo g15; mkdir -p .claude
+MARK13="$TMP/G15_EXECUTOU"; rm -f "$MARK13"
+jq -n --arg m "$MARK13" '{exec:{command:"sh",args:["-c",("printf ok > "+$m)]},
+   replaces:["python"], coverage_justification:"o projeto assume so Python"}' > .claude/verify.json
+printf 'def f():\n    return 1\n' > app.py
+printf 'const x = 1;\n' > app.js
+git add -A; git commit -qm b
+# JS QUEBRADO: se o adaptador de Node ainda for aplicavel, o gate tem de BARRAR. Se o comando do
+# projeto tivesse substituido tudo, o JS quebrado passaria batido e o gate sairia 0.
+printf 'function f( {\n' > app.js; git add -A
+D15="$(sha256sum .claude/verify.json | cut -d' ' -f1)"
+H13="$TMP/h15"; rm -rf "$H13"; mkdir -p "$H13/.claude/logs"
+printf '%s\n' "$D15" > "$H13/.claude/verify-cmd-approved"
+RC15="$( printf '{}' | HOME="$H13" bash "$MUT13" >/dev/null 2>&1; echo $? )"
+chk "o comando do projeto executou (ecossistema reivindicado)" \
+    "$([ -f "$MARK13" ] && echo sim || echo nao)" "sim"
+chk "  e o JS quebrado AINDA barra (cobertura nao reivindicada permanece)" "$RC15" "2"
+
 cd /
 echo
 echo "================ PASS=$P  FAIL=$F ================"
 # CONTAGEM E INVARIANTE, nao descricao. Sem isto, apagar cinco casos deixa PASS=15/FAIL=0 e a
 # suite segue verde - o numero no relatorio viraria documentacao, nao garantia.
-EXPECTED=34
+EXPECTED=41
 if [ "$P" -ne "$EXPECTED" ]; then
   echo "CONTAGEM INESPERADA: PASS=$P, esperado $EXPECTED. Caso removido ou nao executado."
   exit 1

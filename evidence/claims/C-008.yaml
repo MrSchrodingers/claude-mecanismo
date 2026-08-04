@@ -5,7 +5,7 @@ claim: 'Commit local sem upstream nao desaparece do conjunto de mudancas: o gate
   ha artefato pronto para atravessar.'
 type: empirical-invariant
 scope:
-  commit: c3ffe52
+  subject_snapshot: c3ffe5202bc87e59a61d1a2bcac0f4c8b65953af
   platforms:
   - local-linux
   - github-ubuntu-24.04
@@ -14,7 +14,10 @@ evidence:
   - G12
   mutants:
   - M10
-  ci_run: https://github.com/MrSchrodingers/evidence-gate/actions/workflows/verify.yml
+  ci:
+    run_id: 30924006484
+    head_sha: c3ffe5202bc87e59a61d1a2bcac0f4c8b65953af
+    workflow: verify
 warrant: 'G12 tem tres casos que so valem juntos: commit quebrado sem upstream BARRA; o mesmo commit limpo
   LIBERA (senao a garantia seria satisfeita por um gate que barra sempre); e sem remoto a inercia segue
   legitima, fixando a fronteira semantica. M10 remove a busca de base e mata o primeiro.'

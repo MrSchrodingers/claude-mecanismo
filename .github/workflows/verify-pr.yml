@@ -6,18 +6,55 @@
 # Ver docs/adr/0022.
 #
 # Para que este workflow seja enforcement e nao decoracao, e preciso configurar no repositorio:
-#   Settings > Rules > required status check = "verify"
+#   Settings > Rules > required status check = "verify-pr"
 #   proibir bypass para o ator, e exigir o check sobre o SHA exato.
 # Sem isso ele e feedback, como pre-commit - que `git commit --no-verify` ignora (medido).
-name: verify
+#
+# ESTE E O CONTEXTO EXIGIDO. O gemeo `verify-push.yml` roda a MESMA verificacao em `push` e NAO
+# deve ser exigido pelo ruleset.
+#
+# POR QUE SAO DOIS ARQUIVOS - defeito MEDIDO em 2026-08-04, nao preferencia de estilo.
+# Antes, um unico workflow `verify` disparava em `push` e em `pull_request` com um unico job
+# `verify`. Sobre o head do PR #4:
+#
+#   $ gh api repos/MrSchrodingers/evidence-gate/commits/ef307bf.../check-runs
+#   2
+#   verify | success | id=92057531104
+#   verify | success | id=92057522494
+#
+# DOIS check-runs homonimos sobre o MESMO SHA. Um required status check e identificado por NOME,
+# e qual dos dois a regra avalia quando eles DIVERGEM nao foi localizado na doc primaria
+# (limitacao registrada em C-016). A propriedade exigida nao e
+# `|{check-runs chamados verify}| >= 1`, e sim `|{check-runs com o nome exigido}| = 1`.
+# tests/unit/fronteira-externa.sh trava essa propriedade; tests/mutation/fronteira.sh a mata.
+#
+# POR QUE NAO REUSO (composite action / reusable workflow): ambos me obrigariam a AFIRMAR o nome
+# do check-run resultante sem poder verifica-lo na doc primaria - exatamente o defeito sendo
+# corrigido. Alem disso, composite action nao aceita `timeout-minutes` em passo (doc primaria
+# "Metadata syntax": run, shell, if, name, id, env, working-directory, uses, with,
+# continue-on-error). O preco desta escolha e a duplicacao dos passos entre os dois arquivos, e
+# esse preco e PAGO pelo caso FE3, que reprova se os dois divergirem.
+name: verify-pr
 on:
-  push:
   pull_request:
+  merge_group:
+# O GRUPO INCLUI O NOME DO WORKFLOW de proposito: se `verify-pr` e `verify-push` caissem no mesmo
+# grupo sobre o mesmo ref, um cancelaria o outro. Cancelar o run exigido deixa o check em
+# `cancelled` - nunca `success` - e o PR nao fecha mais.
+concurrency:
+  group: verify-pr-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 permissions:
   contents: read
 jobs:
-  verify:
+  verify-pr:
+    # `name:` explicito e IGUAL ao job id: com ou sem `name:`, o nome do check-run e o mesmo
+    # string, e a premissa sobre qual dos dois o GitHub usa deixa de decidir o resultado.
+    name: verify-pr
     runs-on: ubuntu-24.04
+    # TETO, nao medicao: o provisionamento ja tem 6min proprios, e as suites somadas nao foram
+    # cronometradas na CI. Existe para que um travamento nao consuma o runner indefinidamente.
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4 pinado: tag e mutavel
         with: { fetch-depth: 0 }
@@ -81,6 +118,8 @@ jobs:
           bash install/manifest.sh install/manifest.check >/dev/null
           diff -u install/manifest.lock install/manifest.check \
             || { echo "manifest.lock desatualizado - rode install/manifest.sh e commite"; exit 1; }
+      - name: fronteira externa (o contexto do required check e unico)
+        run: bash tests/unit/fronteira-externa.sh
       - name: cadeia de suprimentos
         run: bash tests/unit/supply-chain.sh
       - name: executor documental
@@ -105,5 +144,7 @@ jobs:
         run: bash tests/mutation/contrato.sh
       - name: validacao por mutacao (instalador)
         run: bash tests/mutation/install.sh
+      - name: validacao por mutacao (fronteira externa)
+        run: bash tests/mutation/fronteira.sh
       - name: suite legada
         run: bash tests/unit/run.sh

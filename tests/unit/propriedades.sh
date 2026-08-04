@@ -42,8 +42,11 @@ mkdir -p "$T/wf"
 # real com UMA linha trocada: assim S3..S6 continuam valendo e a reprovacao e atribuivel a
 # linha alterada, e nao a um arquivo genericamente incompleto.
 sc_caso(){ # $1=linha nova  $2=pip|act  -> ecoa PASS/FAIL do caso correspondente
-  cp "$REPO/.github/workflows/verify.yml" "$T/wf/verify.yml"
-  python3 - "$T/wf/verify.yml" "$1" "$2" <<'PY'
+  # O workflow exigido pelo ruleset e a copia de referencia. `verify-push.yml` roda os MESMOS
+  # passos (garantido por FE3 em tests/unit/fronteira-externa.sh), entao medir sobre um dos dois
+  # mede os dois - e S1..S6 varrem o diretorio inteiro em uso normal, de todo modo.
+  cp "$REPO/.github/workflows/verify-pr.yml" "$T/wf/verify-pr.yml"
+  python3 - "$T/wf/verify-pr.yml" "$1" "$2" <<'PY'
 import re, sys
 p, novo, tipo = sys.argv[1], sys.argv[2], sys.argv[3]
 s = open(p).read()

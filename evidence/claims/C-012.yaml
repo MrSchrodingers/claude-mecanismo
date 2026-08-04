@@ -5,7 +5,7 @@ claim: 'O manifesto e reproduzivel: invariante sob locale e sob ordem de leitura
   a arvore committada.'
 type: empirical-invariant
 scope:
-  commit: c3ffe52
+  subject_snapshot: c3ffe5202bc87e59a61d1a2bcac0f4c8b65953af
   platforms:
   - local-linux
   - github-ubuntu-24.04
@@ -14,7 +14,10 @@ evidence:
   - R1
   - R2
   - R3
-  ci_run: https://github.com/MrSchrodingers/evidence-gate/actions/workflows/verify.yml
+  ci:
+    run_id: 30924006484
+    head_sha: c3ffe5202bc87e59a61d1a2bcac0f4c8b65953af
+    workflow: verify
 warrant: R1 usa discriminador COMPORTAMENTAL de locale (a ordenacao precisa diferir de C) porque verificar
   o NOME do locale nao verifica efeito - `locale` ecoa nomes inexistentes. Ha ainda uma assercao-guarda
   exigindo que ao menos um locale de ordenacao distinta tenha sido exercitado, sem a qual um ambiente

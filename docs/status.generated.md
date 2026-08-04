@@ -7,23 +7,25 @@ O README referencia este arquivo em vez de duplicar numeros.
 
 | Suite | Assercoes | Exit |
 |---|---:|---:|
-| `tests/unit/regressao-gate.sh` | 34 | 0 |
+| `tests/unit/regressao-gate.sh` | 41 | 0 |
 | `tests/unit/document-tools.sh` | 21 | 0 |
 | `tests/unit/supply-chain.sh` | 6 | 0 |
 | `tests/unit/reprodutibilidade.sh` | variavel (ambiente) | 0 |
 | `tests/unit/concorrencia.sh` | 8 | 0 |
-| `tests/unit/claims.sh` | 21 | 0 |
+| `tests/unit/claims.sh` | 34 | 0 |
 | `tests/unit/propriedades.sh` | 22 | 0 |
-| `tests/unit/managed.sh` | 46 | 0 |
+| `tests/unit/fronteira-externa.sh` | 6 | 0 |
+| `tests/unit/managed.sh` | 53 | 0 |
 | `tests/unit/run.sh` | 53 | 0 |
 
 ## Mutacao
 
 | Alvo | Mutantes | Exit |
 |---|---:|---:|
-| gate | 10 | 0 |
+| gate | 13 | 0 |
 | contrato de subagente | 9 | 0 |
-| instalador | 1 | 0 |
+| instalador | 2 | 0 |
+| fronteira externa | 4 | 0 |
 
 ## Componentes
 
@@ -38,7 +40,11 @@ O README referencia este arquivo em vez de duplicar numeros.
 
 ## Limites declarados
 
-- politica `governed=user`: alteravel pelo ator governado; raiz de confianca nao implementada
+- politica `governed=user`: os hooks ativos vivem em ~/.claude, gravavel pelo ator.
+  O instalador managed (`install/apply-managed.sh`) esta CONSTRUIDO e exercitado contra
+  prefixo de ensaio, mas `allowManagedHooksOnly` NAO foi ativado. Duas dependencias da
+  cadeia seguem no espaco do ator: o proprio checkout de onde o instalador roda, e
+  `EVIDENCE_GATE_REPO`, que o hook managed de SessionStart usa para achar o verificador.
 - ambiente auditavel, nao hermetico: `ubuntu-24.04` fixa familia, nao digest
 - sem corpus de desfecho: nenhuma afirmacao sobre eficacia de engenharia
 - sem auditoria autoralmente independente: a CI e observador ambiental
@@ -52,3 +58,14 @@ O README referencia este arquivo em vez de duplicar numeros.
   direto do ADMIN foi recusado (GH013). Ver `evidence/observations/2026-08-04-fronteira-externa-e-contrato-no-runtime.md`
 - `precedencia de hooks nao confirmada`: medida - hooks de plugin SOMAM aos de usuario,
   nao os sobrepoem. Ver `evidence/observations/2026-08-04-precedencia-de-hooks.md`
+- `required check ambiguo`: havia DOIS check-runs homonimos `verify` por SHA (eventos
+  push e pull_request), medidos com `gh api .../check-runs` sobre o head do PR #4
+  (total_count=2, ids 92057531104 e 92057522494). Separados em `verify-pr` (exigido) e
+  `verify-push` (nao exigido); travado por `tests/unit/fronteira-externa.sh` e morto por
+  `tests/mutation/fronteira.sh`
+- `claim ledger ancorava o NOME do arquivo`: o validador conferia que o arquivo existia
+  no snapshot; o conteudo citado podia ter mudado depois, e mudou (C-016). A ancora
+  passou a ser `blob_sha`, o conteudo. Caso L13 em `tests/unit/claims.sh`
+- `deploy managed podia deixar a arvore ativa parcial`: a copia ia direto no destino e
+  os portoes rodavam depois. Agora e staging com publicacao APOS os portoes; MG15
+  compara o digest da arvore inteira antes e depois de um deploy reprovado

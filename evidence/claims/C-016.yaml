@@ -5,15 +5,26 @@ claim: Um artefato que nao passou por pull request com os required checks verdes
   O ator governado, mesmo com autoridade de administrador, nao consegue coloca-lo la.
 type: runtime-observation
 scope:
-  commit: c3ffe52
+  subject_snapshot: c3ffe5202bc87e59a61d1a2bcac0f4c8b65953af
+  # ESCOPO CORRIGIDO (2026-08-04). Declarava `github-ubuntu-24.04`, que e a imagem do RUNNER de
+  # CI - e nao e la que a regra foi avaliada. A recusa (GH013) foi emitida pelo servidor do
+  # github.com ao receber um push originado de um cliente `git` em Linux local. O runner nao
+  # participa da decisao; citar sua imagem como plataforma da alegacao confundia o ambiente que
+  # RODA as suites com o ambiente que IMPOE a regra.
   platforms:
-  - local-linux
-  - github-ubuntu-24.04
+  - local-linux           # cliente que emitiu o push
+  - github.com-hosted     # onde a regra foi avaliada (servidor, nao runner de CI)
 evidence:
   observation:
     command: 'git push origin fase1/contrato-ancora:main  # -> GH013, exit 1, origin/main inalterado'
     recorded: evidence/observations/2026-08-04-fronteira-externa-e-contrato-no-runtime.md
-  ci_run: https://github.com/MrSchrodingers/evidence-gate/actions/workflows/verify.yml
+    blob_sha: fd1e01d2a1a0b9e85e1d82f0de77d8c642e1b95e
+    line_start: 29
+    line_end: 188
+  ci:
+    run_id: 30924006484
+    head_sha: c3ffe5202bc87e59a61d1a2bcac0f4c8b65953af
+    workflow: verify
 warrant: 'Criar o ruleset nao e impor, entao o enforcement foi TESTADO - e testado duas vezes, com a variavel
   certa. Push de commit SEM PR associado: recusado com GH013 citando as duas regras, exit 1, origin/main
   inalterado. Push de um SHA que JA e o head de um PR com os checks verdes: aceito, e registrado pelo
@@ -26,8 +37,14 @@ limitations:
   audit log, contornar em silencio nao deixaria.'
 - A propriedade NAO e 'o comando git push falha'. Empurrar um SHA que ja satisfaz todos os requisitos
   e cumprir a politica, nao contorna-la, e o GitHub o registra como merge.
-- 'Ha DOIS check-runs homonimos `verify` por SHA (eventos push e pull_request). Qual deles o required
-  check avalia quando divergem e NAO VERIFICADO: a doc primaria nao foi localizada e a medicao direta
-  exigiria empurrar um commit vermelho de proposito para o branch protegido.'
+- 'NO SNAPSHOT DESTA ALEGACAO havia DOIS check-runs homonimos `verify` por SHA (eventos push e
+  pull_request), medidos sobre o head do PR #4: `gh api .../check-runs` devolveu total_count=2,
+  ambos `verify`, ids 92057531104 e 92057522494. Qual deles o required check avalia quando
+  divergem permaneceu NAO VERIFICADO: a doc primaria nao foi localizada e a medicao direta
+  exigiria empurrar um commit vermelho de proposito para o branch protegido. A ambiguidade foi
+  FECHADA depois deste snapshot - `verify-pr` e `verify-push` passaram a ser contextos distintos,
+  com `tests/unit/fronteira-externa.sh` travando a propriedade e `tests/mutation/fronteira.sh`
+  matando-a. Isto NAO reforca a presente alegacao: o que ela afirma continua sendo o que foi
+  medido em c3ffe52, com a ambiguidade presente.'
 - Nada aqui mede eficacia de engenharia; mede que o portao existe e recusa.
 status: supported-in-tested-domain
