@@ -636,26 +636,62 @@ status gerado
 supply chain
 document tools
 metamorfismo
+raiz de confiança (prefixo de ensaio)
+propriedades
+claim ledger
+concorrência
 regressão
 mutação do gate
+mutação do contrato de subagente
 mutação do instalador
 suíte legada
 ```
 
 ```bash
-# execução local equivalente
+# execução local equivalente. Uma por vez: as suítes não são reentrantes entre si,
+# e o lock em tests/lib/lock.sh reprova com exit 3 se houver corrida.
 bash tests/unit/supply-chain.sh
 bash tests/unit/document-tools.sh
 bash tests/unit/reprodutibilidade.sh
+bash tests/unit/managed.sh
+bash tests/unit/propriedades.sh
+bash tests/unit/claims.sh
+bash tests/unit/concorrencia.sh
 bash tests/unit/regressao-gate.sh
 bash tests/mutation/run.sh
+bash tests/mutation/contrato.sh
 bash tests/mutation/install.sh
 bash tests/unit/run.sh
 bash scripts/status.sh --check
 bash install/verify.sh
 ```
 
-O workflow só se torna gate quando configurado como required status check em ruleset sem bypass para o ator relevante [R12]. Até lá, é reprodução e feedback remoto.
+### O workflow passou a ser gate — e isso foi medido
+
+Desde 2026-08-04 há um ruleset ativo sobre o branch default com `bypass_actors` vazio,
+exigindo pull request e o status check `verify`. A distinção que este projeto insiste em
+fazer: **ter criado o ruleset não é enforcement; enforcement é o push recusado.**
+
+```console
+$ git push origin fase1/contrato-ancora:main
+remote: error: GH013: Repository rule violations found for refs/heads/main.
+remote: - Changes must be made through a pull request.
+remote: - Required status check "verify" is expected.
+ ! [remote rejected] fase1/contrato-ancora -> main (push declined due to repository rule violations)
+exit=1        # origin/main permaneceu em 92908d1
+```
+
+O push partiu do token com `admin: true` — o ator governado em sua maior autoridade sobre o
+repositório — e foi recusado. Em rulesets o bypass só existe por concessão explícita, ao
+contrário da branch protection clássica, onde ignorar administradores é uma flag.
+
+**O limite, que continua valendo:** quem tem `admin` pode *desativar* o ruleset. O que está
+provado é que não há bypass *dentro* da regra, não que a regra seja irremovível. Desativar
+deixa rastro no audit log; contornar em silêncio não deixaria — e essa diferença é todo o
+alcance possível sem uma autoridade organizacional acima do dono do repositório.
+
+Registro completo em
+[`evidence/observations/2026-08-04-fronteira-externa-e-contrato-no-runtime.md`](evidence/observations/2026-08-04-fronteira-externa-e-contrato-no-runtime.md).
 
 ---
 
@@ -839,29 +875,50 @@ McNemar usa os pares discordantes [R13]. Para múltiplos repositórios e repeti�
 | M0 | narrativa sem mecanismo | superado |
 | M1 | mecanismo executável | superado |
 | M2 | regressão, mutação, metamorfismo e CI ambientalmente independente | **atingido** |
-| M3 | enforcement, managed policy, sandbox e runtime confirmado | pendente |
+| M3 | enforcement, managed policy, sandbox e runtime confirmado | **parcial** — ver decomposição |
 | M4 | eficácia medida em corpus congelado | pendente |
 | M5 | auditoria adversarial recorrente e garantias formais seletivas | pendente |
 
+M3 é composto, e tratá-lo como um único bit esconderia exatamente o que falta:
+
+| Componente de M3 | Estado | Base |
+|---|---|---|
+| enforcement na fronteira externa | **atingido** | push do admin recusado (GH013), medido |
+| runtime confirmado | **atingido** | precedência de hooks medida; bloqueio E2E de `PreToolUse` e `SubagentStop` observado contra o binário |
+| managed policy | **construído, não ativado** | instalador com 23 asserções contra prefixo de ensaio; `allowManagedHooksOnly` exige `sudo` e não foi ativado |
+| sandbox | **não iniciado** | parsers de documento seguem com a autoridade do usuário |
+
 Classificação atual:
 
-> **Protótipo experimental robusto, mecanicamente verificável e ambientalmente reproduzido; ainda não é trust boundary, não é hermético, não possui validação estatística de eficácia e não passou por auditoria autoralmente independente.**
+> **Protótipo experimental robusto, mecanicamente verificável e ambientalmente reproduzido, com fronteira externa que comprovadamente impõe. Ainda não é trust boundary local — a política continua gravável pelo ator —, não é hermético, não possui sandbox, não tem validação estatística de eficácia e não passou por auditoria autoralmente independente.**
 
 ---
 
 ## 18. Roadmap
 
-### P0 — validade operacional
+### P0 — validade operacional — **fechado**
 
-- validar `/hooks`, `--debug` e `/status`;
-- criar claim ledger;
+- ~~validar `/hooks`, `--debug` e `/status`~~ — medido por `--include-hook-events`, observável
+  mais forte que `/hooks`: mostra o que **executou**, não o que está configurado;
+- ~~criar claim ledger~~ — `evidence/claims/`, com validador que resolve toda referência
+  contra a suíte;
+- ~~base de comparação sem upstream~~ — G12, com mutante M10;
+- ~~property-based testing~~ — `tests/unit/propriedades.sh`, que encontrou dois detectores de
+  segurança furados na primeira execução;
 - manter o status documental gerado automaticamente.
 
-### P1 — enforcement
+### P1 — enforcement — **fechado e medido**
 
-- required status check;
-- ruleset sem bypass para o ator;
-- check sobre SHA exato.
+- required status check `verify`;
+- ruleset com `bypass_actors` vazio;
+- `strict_required_status_checks_policy`, exigindo a branch atualizada com a base.
+
+Verificar depois de qualquer alteração:
+
+```bash
+gh api repos/<owner>/<repo>/rulesets --jq '.[] | {name, enforcement}'
+git push origin <branch>:main    # precisa ser recusado com GH013
+```
 
 ### P2 — raiz de confiança
 
@@ -947,18 +1004,40 @@ docs/adr/     decisões, contraexemplos e limites
 
 ## 21. Limites declarados
 
-- a política ainda é gravável pelo ator;
-- a precedência runtime de hooks/plugins ainda precisa ser confirmada com `/hooks` e `--debug`;
-- a CI ainda depende de ruleset para se tornar enforcement;
+- a política ainda é gravável pelo ator — `install/apply-managed.sh` existe e foi exercitado
+  contra prefixo de ensaio (23 asserções), mas `allowManagedHooksOnly` **não foi ativado**:
+  exige `sudo` com senha. Que o runtime honre a flag é, hoje, **não verificado**;
 - o ambiente é auditável, não hermético;
-- comandos do repositório ainda exigem sandbox real;
-- commits locais sem upstream precisam de base explícita;
+- comandos do repositório ainda exigem sandbox real. Esta é a lacuna aberta mais relevante, e
+  ela deve travar a expansão para OCR e novos formatos até haver isolamento;
 - grafos não foram avaliados;
 - eficácia externa não foi medida;
 - telemetria longitudinal está incompleta;
-- não há auditoria autoralmente independente.
+- não há auditoria autoralmente independente;
+- o ruleset **impõe**, mas quem tem `admin` pode desativá-lo: o provado é a ausência de bypass
+  dentro da regra, não a irremovibilidade da regra.
 
 Estas limitações não são notas laterais. Elas delimitam exatamente o que o projeto pode afirmar.
+
+### Deixaram de ser limites em 2026-08-04
+
+Limite resolvido que continua escrito é a mesma classe de drift que originou este projeto.
+Estes saem da lista, mas com o rastro de onde está a medição — do contrário o leitor não
+distingue "resolvido" de "apagado".
+
+| Era limite | Estado agora | Onde está a evidência |
+|---|---|---|
+| precedência runtime de hooks/plugins não confirmada | **medida**: hooks de plugin somam aos de usuário, não sobrepõem | [`evidence/observations/2026-08-04-precedencia-de-hooks.md`](evidence/observations/2026-08-04-precedencia-de-hooks.md) |
+| a CI depende de ruleset para virar enforcement | **impõe**: push direto do admin recusado com GH013 | [`evidence/observations/2026-08-04-fronteira-externa-e-contrato-no-runtime.md`](evidence/observations/2026-08-04-fronteira-externa-e-contrato-no-runtime.md) |
+| commits locais sem upstream precisam de base explícita | **corrigido** (G12), com mutante M10 | `evidence/hooks/verify-gate.sh`, `tests/unit/regressao-gate.sh` |
+
+### Claim ledger
+
+As afirmações verificáveis deste repositório estão em [`evidence/claims/`](evidence/claims/),
+uma por arquivo, com escopo, garantia (`warrant`), contraexemplos e limites. O validador
+`evidence/validate-claims.py` **resolve toda referência de evidência contra a suíte real**:
+citar uma regressão ou um mutante que não existe reprova. O inventário é derivado de `tests/`
+a cada execução, nunca digitado — uma lista mantida à mão seria uma segunda cópia da verdade.
 
 ---
 
