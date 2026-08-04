@@ -10,6 +10,8 @@
 #    defeito - falso negativo.
 set -uo pipefail
 cd "$(dirname "$0")/../.." || exit 1
+# LOCK: suites deste repo nao sao reentrantes entre si (tests/lib/lock.sh).
+. "$(dirname "$0")/../lib/lock.sh"
 CTRL="$PWD/control/hooks"
 EXEC="$PWD/execution/hooks"
 EVID="$PWD/evidence/hooks"

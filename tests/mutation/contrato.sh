@@ -14,6 +14,8 @@
 # kill nao atribuivel ao caso-alvo tambem e FALHA - a suite pode ter reprovado por acidente.
 set -uo pipefail
 cd "$(dirname "$0")/../.." || exit 1
+# LOCK: suites deste repo nao sao reentrantes entre si (tests/lib/lock.sh).
+. "$(dirname "$0")/../lib/lock.sh"
 ORIG="evidence/hooks/subagent-contract.sh"
 REG="tests/unit/run.sh"
 TMP="$(mktemp -d)"

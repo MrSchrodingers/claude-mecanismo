@@ -6,6 +6,8 @@
 # ponta a ponta contra um arquivo real.
 set -uo pipefail
 cd "$(dirname "$0")/../.." || exit 1
+# LOCK: suites deste repo nao sao reentrantes entre si (tests/lib/lock.sh).
+. "$(dirname "$0")/../lib/lock.sh"
 D="$PWD/execution/document-tools/doctool.sh"
 P=0; F=0
 chk(){ if [ "$2" = "$3" ]; then echo "  PASS  $1"; P=$((P+1)); else echo "  FAIL  $1 (got=$2 want=$3)"; F=$((F+1)); fi; }

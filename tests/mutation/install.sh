@@ -7,6 +7,8 @@
 # este projeto persegue - logo precisa de mutante proprio.
 set -uo pipefail
 cd "$(dirname "$0")/../.." || exit 1
+# LOCK: suites deste repo nao sao reentrantes entre si (tests/lib/lock.sh).
+. "$(dirname "$0")/../lib/lock.sh"
 ORIG="install/apply.sh"; REG="tests/unit/regressao-gate.sh"
 TMP="$(mktemp -d)"; trap 'cp -f "$TMP/orig.sh" "$ORIG" 2>/dev/null; rm -rf "$TMP"' EXIT
 cp -f "$ORIG" "$TMP/orig.sh"

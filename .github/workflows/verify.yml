@@ -85,6 +85,8 @@ jobs:
         run: bash tests/unit/document-tools.sh
       - name: reprodutibilidade (metamorfico)
         run: bash tests/unit/reprodutibilidade.sh
+      - name: concorrencia (lock das suites)
+        run: bash tests/unit/concorrencia.sh
       - name: status gerado reflete a execucao
         run: bash scripts/status.sh --check
       - name: regressao do gate

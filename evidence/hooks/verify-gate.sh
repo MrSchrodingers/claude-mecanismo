@@ -79,10 +79,45 @@ ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || exit 0
 [ -n "$ROOT" ] || exit 0
 
 # --- o que mudou: nao-commitado + untracked + commits nao publicados ---
+#
+# G12 - BASE DE COMPARACAO SEM UPSTREAM. Defeito reproduzido antes de corrigir: numa branch
+# sem `@{u}`, o conjunto de commits nao publicados era simplesmente OMITIDO do calculo. Como
+# `git commit` tambem zera `diff HEAD` e a lista de untracked, o resultado era CHANGED vazio e
+# `exit 0` - o gate ficava INERTE exatamente no instante em que existe artefato pronto para
+# atravessar a fronteira. Medido: branch nova com `origin/main` publicado e um commit contendo
+# F821, gate saia 0 e mudo.
+#
+# A base honesta depende de existir fronteira a atravessar:
+#   1. ha `@{u}`            -> a base e o upstream (comportamento anterior, preservado);
+#   2. nao ha `@{u}` mas HA remoto -> commit local PODE ser publicado, logo precisa de base:
+#      usa-se o ponto de divergencia em relacao ao alvo de publicacao (origin/HEAD, main,
+#      master). Se o remoto existe mas nenhum ref dele e conhecido (remoto vazio ou sem fetch),
+#      entao NENHUM commit desta arvore foi publicado e a base correta e a ARVORE VAZIA;
+#   3. nao ha remoto nenhum -> nao existe fronteira externa a atravessar. Inerte segue
+#      legitimo, pela mesma razao que "fora de repositorio git" e inerte: e AUSENCIA DE
+#      FRONTEIRA, nao lacuna de verificacao. Declarar NOT_VERIFIED aqui seria ruido em todo
+#      repositorio local, e ruido e o que faz o operador desligar o gate.
 UPSTREAM="$(git -C "$ROOT" rev-parse --abbrev-ref --symbolic-full-name '@{u}' 2>/dev/null || true)"
+BASE=""
+if [ -n "$UPSTREAM" ]; then
+  BASE="$UPSTREAM"
+elif [ -n "$(git -C "$ROOT" remote 2>/dev/null)" ]; then
+  for _c in refs/remotes/origin/HEAD refs/remotes/origin/main refs/remotes/origin/master; do
+    if git -C "$ROOT" rev-parse --verify -q "$_c" >/dev/null 2>&1; then BASE="$_c"; break; fi
+  done
+  [ -n "$BASE" ] || BASE="$(git -C "$ROOT" hash-object -t tree /dev/null 2>/dev/null || true)"
+fi
+# Normaliza para um unico objeto de comparacao. `merge-base` da o ponto de divergencia (evita
+# atribuir a esta branch o que veio do outro lado); quando nao ha ancestral comum - caso da
+# arvore vazia - o proprio BASE serve, e `git diff <arvore> HEAD` lista tudo.
+DIFFBASE=""
+if [ -n "$BASE" ]; then
+  DIFFBASE="$(git -C "$ROOT" merge-base "$BASE" HEAD 2>/dev/null || true)"
+  [ -n "$DIFFBASE" ] || DIFFBASE="$BASE"
+fi
 CHANGED="$( { git -C "$ROOT" diff --name-only HEAD 2>/dev/null
               git -C "$ROOT" ls-files --others --exclude-standard 2>/dev/null
-              [ -n "$UPSTREAM" ] && git -C "$ROOT" diff --name-only "${UPSTREAM}...HEAD" 2>/dev/null
+              [ -n "$DIFFBASE" ] && git -C "$ROOT" diff --name-only "$DIFFBASE" HEAD 2>/dev/null
             } | sed '/^$/d' | sort -u )"
 [ -n "$CHANGED" ] || exit 0
 

@@ -10,11 +10,13 @@
 # (suite verde com a garantia removida) e FALHA DESTE ARQUIVO.
 set -uo pipefail
 cd "$(dirname "$0")/../.." || exit 1
+# LOCK: suites deste repo nao sao reentrantes entre si (tests/lib/lock.sh).
+. "$(dirname "$0")/../lib/lock.sh"
 ORIG="evidence/hooks/verify-gate.sh"
 REG="tests/unit/regressao-gate.sh"
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"; cp -f "$TMP/orig.sh" "$ORIG" 2>/dev/null || true' EXIT
 cp -f "$ORIG" "$TMP/orig.sh"
-P=0; F=0; BASELINE=nao; EXPECTED_MUTANTS=9
+P=0; F=0; BASELINE=nao; EXPECTED_MUTANTS=10
 
 # BASELINE: sem isto, uma regressao quebrada por ambiente faria TODOS os mutantes parecerem
 # mortos - o runner reportaria verde justamente quando nao esta testando nada.
@@ -84,6 +86,11 @@ mutante M8 "env digest cobre o binario" "invalida o cache" \
 # M9 - `git` ausente volta a sair 0 sem olhar .git (G9b)
 mutante M9 "git ausente e lacuna estrutural" "sem git, com .git presente" \
   sed -i 's|^    if \[ -e "$_d/.git" \]; then|    if false; then|' "$ORIG"
+
+# M10 - sem `@{u}`, o gate volta a NAO procurar base de comparacao (G12). O commit nao
+# publicado desaparece do conjunto de mudancas e o hook fica inerte com codigo quebrado.
+mutante M10 "base de comparacao quando nao ha upstream" "commit nao publicado com codigo quebrado BARRA" \
+  sed -i 's|^elif \[ -n "$(git -C "$ROOT" remote 2>/dev/null)" \]; then|elif false; then|' "$ORIG"
 
 cp -f "$TMP/orig.sh" "$ORIG"
 echo

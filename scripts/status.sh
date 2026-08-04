@@ -10,6 +10,8 @@
 # Com --check: nao escreve; reprova se o arquivo committado estiver desatualizado.
 set -uo pipefail
 cd "$(dirname "$0")/.." || exit 1
+# LOCK: status.sh executa TODAS as suites; toma o lock uma vez e as filhas herdam.
+. "$(dirname "$0")/../tests/lib/lock.sh"
 export LC_ALL=C
 OUT="docs/status.generated.md"; CHECK=0
 [ "${1:-}" = "--check" ] && CHECK=1 || OUT="${1:-$OUT}"
@@ -27,7 +29,7 @@ TMP="$(mktemp)"
   # que ele existe para impedir. A CI pegou isso na primeira execucao. Para essas suites vale o
   # exit code, que e estavel; a contagem fica marcada como variavel.
   for t in tests/unit/regressao-gate.sh tests/unit/document-tools.sh tests/unit/supply-chain.sh \
-           tests/unit/reprodutibilidade.sh tests/unit/run.sh; do
+           tests/unit/reprodutibilidade.sh tests/unit/concorrencia.sh tests/unit/run.sh; do
     bash "$t" >/dev/null 2>&1; rc=$?
     if grep -q 'EXPECTED=\$((' "$t"; then n="variavel (ambiente)"
     else n="$(conta "$t")"; fi

@@ -11,6 +11,8 @@
 #   G4 REPROVA - monorepo verificava so o primeiro ecossistema que casava
 set -uo pipefail
 cd "$(dirname "$0")/../.." || exit 1
+# LOCK: suites deste repo nao sao reentrantes entre si (tests/lib/lock.sh).
+. "$(dirname "$0")/../lib/lock.sh"
 REPO_ROOT="$PWD"          # os casos fazem cd; guarde a raiz antes
 GATE="$PWD/evidence/hooks/verify-gate.sh"
 export CLAUDE_ADAPTERS_DIR="$PWD/execution/adapters/code"
@@ -171,12 +173,44 @@ chk "  o orfao continua no disco" "$([ -f "$DH/hooks/saiu.sh" ] && echo sim || e
 chk "  mas o plano ANUNCIA a remocao" "$(grep -q 'REMOVERIA' "$TMP/dry" && echo sim || echo nao)" "sim"
 chk "  e nao cria backup" "$([ -d "$DH/backups" ] && echo nao || echo sim)" "sim"
 
+echo "== G12. commit sem upstream NAO some do conjunto de mudancas =="
+# NUMERACAO: os rotulos deste arquivo iam ate G10 e os do ADR 0022 ate G11 (identidade do
+# ambiente, que aqui e G8) - as duas sequencias ja divergiam. G12 e livre nas duas; nao
+# reaproveitar G11 evita compor a divergencia.
+#
+# DEFEITO REPRODUZIDO antes da correcao: sem `@{u}`, os commits nao publicados eram OMITIDOS do
+# calculo. Como `git commit` tambem zera `diff HEAD` e a lista de untracked, CHANGED ficava
+# vazio e o gate saia 0 EM SILENCIO - inerte justamente quando ha artefato pronto para
+# atravessar. Medido: branch nova, `origin/main` publicado, commit com F821 -> exit 0.
+#
+# Os tres casos abaixo tem de andar juntos. Sozinho, o primeiro seria satisfeito por um gate
+# que barra sempre; o segundo impede isso. E o terceiro fixa a fronteira semantica: sem remoto
+# nao ha fronteira externa a atravessar, e inercia continua sendo a resposta certa - do
+# contrario o gate viraria ruido em todo repositorio local e seria desligado.
+REMOTO="$TMP/g12-remoto.git"; git init -q --bare "$REMOTO"
+novo_repo g12
+git remote add origin "$REMOTO"
+git push -q origin HEAD:main 2>/dev/null
+git fetch -q origin 2>/dev/null
+git checkout -q -b sem-upstream
+printf 'def g():\n    return indefinido_g12\n' > quebrado.py; git add -A; git commit -qm "quebrado"
+chk "cenario montado: branch SEM upstream, com remoto publicado" \
+    "$(git rev-parse --abbrev-ref --symbolic-full-name '@{u}' >/dev/null 2>&1 && echo tem || echo nenhum)" "nenhum"
+chk "  arvore limpa: o defeito so aparece com tudo committado" \
+    "$( [ -z "$(git diff --name-only HEAD)$(git ls-files --others --exclude-standard)" ] && echo sim || echo nao)" "sim"
+chk "  commit nao publicado com codigo quebrado BARRA (era exit 0 mudo)" "$(gate false)" 2
+printf 'def g():\n    return 1\n' > quebrado.py; git add -A; git commit -qm "limpo"
+chk "  e LIBERA quando o mesmo commit esta limpo (nao vira 'barra sempre')" "$(gate false)" 0
+novo_repo g12b
+printf 'def f():\n    return indefinido\n' > quebrado.py; git add -A; git commit -qm "quebrado"
+chk "  SEM remoto: inerte segue legitimo (ausencia de fronteira, nao lacuna)" "$(gate false)" 0
+
 cd /
 echo
 echo "================ PASS=$P  FAIL=$F ================"
 # CONTAGEM E INVARIANTE, nao descricao. Sem isto, apagar cinco casos deixa PASS=15/FAIL=0 e a
 # suite segue verde - o numero no relatorio viraria documentacao, nao garantia.
-EXPECTED=29
+EXPECTED=34
 if [ "$P" -ne "$EXPECTED" ]; then
   echo "CONTAGEM INESPERADA: PASS=$P, esperado $EXPECTED. Caso removido ou nao executado."
   exit 1
