@@ -1,0 +1,46 @@
+# Ledger de alegacoes - ver evidence/validate-claims.py para o contrato.
+# REFERENCIA evidencia existente; nunca a duplica.
+claim_id: C-017
+claim: O contexto exigido pelo required status check e produzido por exatamente UM check-run por SHA.
+  Antes desta correcao havia dois check-runs homonimos `verify` sobre o mesmo SHA, e a regra de
+  desempate nao era conhecida.
+type: security-property
+scope:
+  subject_snapshot: 8f7b543ef7d61239cb9e7bf5210e40f72cb4f38d
+  # O cliente e local; a decisao sobre check-runs e do servidor. O runner ubuntu-24.04 NAO entra:
+  # ele executa a verificacao, nao decide qual contexto o ruleset avalia.
+  platforms:
+  - local-linux
+  - github.com-hosted
+evidence:
+  regression: [FE1, FE2, FE3, FE4]
+  mutants: [MF1, MF2, MF3, MF4]
+  observation:
+    command: gh api repos/MrSchrodingers/evidence-gate/commits/8f7b543/check-runs --jq '.total_count, (.check_runs[]|.name)'
+    recorded: evidence/observations/2026-08-04-contexto-unico-do-required-check.md
+    blob_sha: d0488c3ef0b79ebf66d302cecbb3532470ac54f6
+    line_start: 61
+    line_end: 86
+  ci:
+    run_id: 30949346779
+    head_sha: 8f7b543ef7d61239cb9e7bf5210e40f72cb4f38d
+    workflow: verify-pr
+warrant: 'Predicao registrada ANTES da medicao e confirmada exatamente: total_count=2, nomes `verify-pr`
+  e `verify-push`, um por evento, nenhum chamado `verify`. O par ANTES/DEPOIS e sobre a MESMA
+  configuracao de repositorio e difere na separacao dos gatilhos - o estado anterior (dois `verify`
+  sobre ef307bf, ids 92057531104 e 92057522494) e o controle que impede ler o resultado atual como
+  propriedade preexistente. Os quatro mutantes de tests/mutation/fronteira.sh reintroduzem cada
+  garantia removida (colisao de nome, dois jobs decisorios, divergencia entre os arquivos, e drift
+  entre o contexto documentado e o produzido) e cada um morre no caso correspondente.'
+limitations:
+- 'A propriedade e sobre a CONFIGURACAO deste repositorio, nao sobre o GitHub Actions em geral:
+  um SHA, um provedor, uma medicao.'
+- 'O ruleset ainda exige `verify`, contexto que deixou de ser produzido. Ate ser editado para
+  `verify-pr`, a fronteira exige algo que ninguem reporta - fail-closed, mas por motivo errado.
+  A troca e acao externa e NAO foi medida aqui.'
+- 'Continua NAO VERIFICADO qual check-run o GitHub avalia se dois homonimos DIVERGIREM. A correcao
+  remove a condicao; nao responde a pergunta.'
+- 'A suite `tests/unit/fronteira-externa.sh` e ESTATICA: le os arquivos de workflow. Ela nao
+  observa check-runs reais - isso e o que a observacao acima faz, uma vez.'
+- Nada aqui mede eficacia de engenharia; mede que o portao tem um nome so.
+status: supported-in-tested-domain
