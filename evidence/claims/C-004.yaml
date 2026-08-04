@@ -4,7 +4,7 @@ claim_id: C-004
 claim: 'Num monorepo, todo adaptador aplicavel e verificado: um ecossistema valido nao mascara outro quebrado.'
 type: empirical-invariant
 scope:
-  commit: '1319931'
+  commit: c3ffe52
   platforms:
   - local-linux
   - github-ubuntu-24.04

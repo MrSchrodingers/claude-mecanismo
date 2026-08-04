@@ -5,7 +5,7 @@ claim: O aviso do gate chega ao modelo por um canal que o runtime de fato entreg
   exit 0.
 type: empirical-invariant
 scope:
-  commit: '1319931'
+  commit: c3ffe52
   platforms:
   - local-linux
   - github-ubuntu-24.04

@@ -241,6 +241,15 @@ chk "  BARRA retorno sem PROPAGACAO" \
     "$(c2 'RESULTADO: ok
 EVIDENCIA: a.py:1
 RISCOS: nenhum')" 2
+# PORTAO FINAL, 2026-08-04: a correcao do falso aceite `R$ 500 mil` introduziu `[$>]`, e o `>`
+# no inicio da linha e BLOCKQUOTE de markdown - a forma corrente de um agente citar prompt,
+# doc ou mensagem de erro. Medido: 8 de 15 retornos de prosa plausivel atravessavam, 3 so por
+# isso. Terceira vez neste oraculo em que fechar um falso sinal abriu outro.
+chk "  BARRA blockquote de markdown como ancora" \
+    "$(c2 "RESULTADO: revisei o pedido.
+EVIDENCIA: o CLAUDE.md diz:
+> revise o modulo antes de seguir
+Nao executei nada.$Q4")" 2
 O="$EXEC/output-budget.sh"
 # acima do limite de 12.000 B, senao o hook sai 0 sem emitir e o teste reprova um hook correto
 BIG=$(python3 -c "print('\n'.join(f'linha de saida numero {i} com texto suficiente' for i in range(500)))")
@@ -266,5 +275,13 @@ bash -n evidence/telemetry/medir-skills.sh; chk "medir-skills.sh sintaxe" $? 0
 
 echo
 echo "================ PASS=$P  FAIL=$F ================"
+# CONTAGEM INVARIANTE - esta era a UNICA suite sem ela, achado do portao final. E logo esta,
+# que hospeda os casos do oraculo da ancora: um caso que parasse de rodar aqui sumiria em
+# silencio, e foi exatamente assim que a ancora ficou sem discriminador por versoes inteiras.
+EXPECTED=53
+if [ "$P" -ne "$EXPECTED" ]; then
+  echo "CONTAGEM INESPERADA: PASS=$P, esperado $EXPECTED. Caso removido ou nao executado."
+  exit 1
+fi
 [ "$F" -eq 0 ] && echo "suite verde" || echo "suite VERMELHA"
 exit "$F"

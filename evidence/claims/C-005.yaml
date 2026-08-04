@@ -4,7 +4,7 @@ claim_id: C-005
 claim: Dependencia estrutural ausente produz NAO VERIFICADO, nunca sucesso silencioso.
 type: security-property
 scope:
-  commit: '1319931'
+  commit: c3ffe52
   platforms:
   - local-linux
   - github-ubuntu-24.04

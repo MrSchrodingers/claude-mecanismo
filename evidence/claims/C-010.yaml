@@ -5,7 +5,7 @@ claim: Declarar 'nao verificado' e uma saida valida do contrato de subagente, e 
   sem lastro.
 type: method-rule
 scope:
-  commit: '1319931'
+  commit: c3ffe52
   platforms:
   - local-linux
   - github-ubuntu-24.04

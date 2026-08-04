@@ -138,13 +138,13 @@ absorcao silenciosa que este repositorio existe para nao fazer. O lock mora em `
 
 `evidence/claims/*.yaml`, 16 alegacoes. A regra que o distingue de prosa formatada: **toda
 referencia a evidencia e resolvida contra a suite real, e citar regressao ou mutante inexistente
-REPROVA.** O inventario (32 regressoes, 16 mutantes) e DERIVADO de `tests/` a cada execucao -
+REPROVA.** O inventario e DERIVADO de `tests/` a cada execucao (a contagem corrente sai em `docs/status.generated.md`; digita-la aqui a faria divergir, que e exatamente o defeito que originou aquele arquivo) -
 lista digitada seria segunda copia da verdade.
 
 Ha autochecagem: extracao vazia sai 2 (NAO VERIFICADO), nunca 0. Sem ela, uma regex quebrada
 reprovaria tudo (falso vermelho) ou, frouxa demais, aprovaria tudo (falso verde).
 
-Dos 15 casos de `tests/unit/claims.sh`, 12 sao negativos. E um deles nasceu passando pelo motivo
+A maioria dos casos de `tests/unit/claims.sh` e NEGATIVA - e essa proporcao, e nao o total, e o que importa: um validador que aprovasse tudo passaria em qualquer numero de positivos. E um deles nasceu passando pelo motivo
 errado - o fixture era YAML invalido e a reprovacao vinha do parser, nao da resolucao.
 
 ## 8. Raiz de confianca: duas correcoes ao plano do handoff
@@ -173,7 +173,7 @@ o proprio instalador havia criado).
 ## O que NAO foi feito, e por que
 
 - **`allowManagedHooksOnly` nao foi ativado.** Exige `sudo`, que exige senha nesta maquina. O
-  instalador foi exercitado integralmente contra prefixo de ensaio (23 assercoes), mas a
+  instalador foi exercitado integralmente contra prefixo de ensaio, mas a
   afirmacao "o runtime honra a flag" so pode vir de medicao com root. Ate la o estado e
   NAO VERIFICADO, e o `status.generated.md` continua dizendo `governed=user`.
 - **Sem corpus de eficacia (P4).** Nenhuma afirmacao sobre melhoria de engenharia e dizivel.
@@ -192,8 +192,11 @@ o proprio instalador havia criado).
 - Se `allowManagedHooksOnly`, ativado, NAO bloqueasse hooks de usuario, a secao 8 estaria
   descrevendo uma garantia que nao existe. Nao foi medido.
 - Se o oraculo da ancora, corrigido, passasse a aceitar retorno sem lastro em uso real, a
-  correcao da secao 3 teria trocado falso bloqueio por falso verde. O corpus tem 15 casos e 6
-  negativos; nao ha medicao em producao.
+  correcao da secao 3 teria trocado falso bloqueio por falso verde. **ISTO SE REALIZOU DUAS
+  VEZES** - ver o adendo. Esta linha citava um "corpus de 15 casos" que nunca existiu em
+  `tests/`; a cobertura real e a que `docs/status.generated.md` publica por execucao. Manter
+  aqui a alegacao que o proprio adendo desmente seria o defeito descrito duas secoes abaixo,
+  dentro do paragrafo que existe para dizer o que refutaria este documento.
 
 ## O padrao, com oito instancias novas
 
@@ -331,3 +334,79 @@ A conclusao operacional nao e "revisar mais". E que **revisao com CONTEXTO SEPAR
 que executa acha o que o autor nao pode achar**, porque o ponto cego do autor esta nos testes
 tanto quanto no codigo. O `refutador` como portao final nao substitui isso: chega tarde demais
 para reescrever o corpus.
+
+---
+
+## Adendo 2 - o portao final, e o que ele refutou
+
+O `refutador` recebeu o diff cru e o veredito foi **revisar-e-ressubmeter**, com tres refutacoes
+estruturais em artefatos independentes. Todas reproduzidas por execucao propria antes de aceitas.
+
+### O portao de populacao comparava o manifesto CONSIGO MESMO
+
+`--enforce` conferia `n` (itens conformes) contra `tipos_politica | wc -l` - e `n` vinha do laco
+que itera a MESMA fonte. Tautologia: so podia falhar com o conjunto vazio, que era justamente o
+caso que o adendo anterior havia acabado de cobrir. Medido:
+
+```
+$ grep -v 'evidence/hooks/verify-gate.sh' install/manifest.lock > sem-gate.lock
+$ MANAGED_MANIFEST=sem-gate.lock ... --enforce     -> EXIT=0
+  allowManagedHooksOnly=true
+  politica declara: bash .../hooks/verify-gate.sh   -> arquivo NAO EXISTE
+```
+
+O gatilho e o procedimento normal do repositorio: `manifest.sh` gera por glob, entao renomear ou
+mover um hook e regenerar produz esse estado sem edicao manual. A politica vem de OUTRA fonte -
+`hooks-spec.sh` - e o produto nunca a confrontava com o disco. **A propriedade existia apenas no
+oraculo do teste (MG4), exercitada sobre o manifesto real, onde era vacuamente verdadeira.**
+Garantia morando no TESTE e nao no ARTEFATO - a inversao que este ADR persegue, encontrada
+dentro do portao construido para impedi-la, uma correcao depois.
+
+Este e o **quinto** defeito no mesmo `apply-managed.sh` nesta sessao.
+
+### A correcao do falso aceite anterior introduziu outro
+
+Ao ancorar o prompt de shell no inicio da linha para barrar `R$ 500 mil`, entrou `[$>]` - e `>`
+no inicio da linha e BLOCKQUOTE de markdown, a forma corrente de um agente citar prompt, doc ou
+mensagem de erro. Medido: 8 de 15 retornos de prosa plausivel atravessavam, 3 so por isso. O `>`
+entrou sem mencao no comentario que justificava o cifrao.
+
+**Terceira rodada de regex neste oraculo, terceiro par falso-bloqueio/falso-aceite.** O `>` foi
+removido; o padrao de recorrencia fica registrado, porque ele - e nao a alternativa N+1 - e o
+achado. Um oraculo lexical sobre texto livre tem um teto, e cada rodada o encontra por outro
+lado.
+
+### `scope.commit` era decorativo
+
+O validador conferia apenas que o objeto git existia, e resolvia a evidencia contra o WORKTREE.
+Medido: as 16 claims declaravam `1319931`, e nesse snapshot os mutantes MC6/MC7 e as duas
+observacoes de C-015/C-016 nao existiam. A frase impressa era verdadeira sobre a arvore de
+trabalho e falsa sobre o escopo que cada claim declara.
+
+Corrigido na estrutura: `inventario_no_commit()` deriva a evidencia do snapshot declarado por
+cada claim, via `git ls-tree` e `git show`, e a observacao e conferida com `git cat-file -e
+<commit>:<path>`. L12 exercita a discriminacao - a MESMA claim, mudando so o snapshot, passa de
+0 para 1.
+
+### E o ADR mantinha publicada a alegacao que ele mesmo desmentia
+
+A secao "O que refutaria este ADR" repetia o "corpus de 15 casos" que o adendo 1 declara
+inexistente. Corrigido, junto de tres numeros digitados em prosa que ja haviam se afastado do
+repositorio. A correcao **nao foi atualiza-los**: foi remove-los e apontar para
+`docs/status.generated.md`. Numero digitado em prosa e a classe que originou este projeto, e
+atualizar um numero so adia a proxima divergencia.
+
+`tests/unit/run.sh` era a unica suite sem invariante de contagem - e e a que hospeda os casos do
+oraculo da ancora. Agora tem.
+
+### O que o portao final demonstra
+
+O `refutador` sustentou P1 conferindo o ruleset na API em vez de acreditar no relato, e nao
+conseguiu refutar P0.2, P0.3, P0.4, o lock nem as contagens invariantes - dizendo, em cada caso,
+o que testou. Refutou tres coisas, e as tres eram do mesmo tipo: **artefatos que afirmavam mais
+do que verificavam**, incluindo o proprio ADR.
+
+O padrao acumulado nesta sessao, agora com dezenove defeitos: os achados vieram de mudar o que
+executa e de contexto separado. Nenhum veio de reler. E as correcoes produziram uma fracao
+relevante dos defeitos seguintes - o que significa que "corrigido" e um estado tao sujeito a
+verificacao quanto "escrito".

@@ -61,25 +61,87 @@ RE_CLAIM_ID = re.compile(r"^C-[0-9]{3}$")
 RE_EVID_ID = re.compile(r"^[A-Z]{1,3}[0-9]{1,3}[a-z]?$")
 
 
+RE_CASO = re.compile(r"""^echo\s+['"]==\s+([A-Z]{1,3}[0-9]{1,3}[a-z]?)\.""")
+RE_MUT = re.compile(r"^(?:mutante\s+|#\s*)([A-Z]{1,3}[0-9]{1,3})\b\s*[-: ]")
+
+
+def _extrai(texto, rgx, strip):
+    achados = set()
+    for linha in texto.splitlines():
+        m = rgx.match(linha.strip() if strip else linha)
+        if m:
+            achados.add(m.group(1))
+    return achados
+
+
 def inventario(raiz):
-    """Deriva o que EXISTE de evidencia, lendo tests/. Nunca de lista digitada."""
+    """Inventario do WORKTREE. Nunca de lista digitada: uma lista mantida a mao seria uma
+    segunda copia da verdade, e duas copias divergem em silencio."""
     regressoes, mutantes = set(), set()
-    du = os.path.join(raiz, "tests", "unit")
-    dm = os.path.join(raiz, "tests", "mutation")
-    re_caso = re.compile(r"""^echo\s+['"]==\s+([A-Z]{1,3}[0-9]{1,3}[a-z]?)\.""")
-    re_mut = re.compile(r"^(?:mutante\s+|#\s*)([A-Z]{1,3}[0-9]{1,3})\b\s*[-: ]")
-    for d, alvo, rgx in ((du, regressoes, re_caso), (dm, mutantes, re_mut)):
+    for sub, alvo, rgx, strip in (("unit", regressoes, RE_CASO, False),
+                                  ("mutation", mutantes, RE_MUT, True)):
+        d = os.path.join(raiz, "tests", sub)
         if not os.path.isdir(d):
             continue
         for nome in sorted(os.listdir(d)):
-            if not nome.endswith(".sh"):
-                continue
-            with open(os.path.join(d, nome), encoding="utf-8", errors="replace") as fh:
-                for linha in fh:
-                    m = rgx.match(linha.strip() if alvo is mutantes else linha)
-                    if m:
-                        alvo.add(m.group(1))
+            if nome.endswith(".sh"):
+                with open(os.path.join(d, nome), encoding="utf-8", errors="replace") as fh:
+                    alvo |= _extrai(fh.read(), rgx, strip)
     return regressoes, mutantes
+
+
+_CACHE_SNAP = {}
+
+
+def inventario_no_commit(raiz, commit):
+    """Inventario derivado do SNAPSHOT QUE A CLAIM DECLARA, e nao do worktree.
+
+    POR QUE ISTO EXISTE (portao final, 2026-08-04). `scope.commit` era DECORATIVO: o validador
+    conferia apenas que o objeto git existia, e resolvia a evidencia contra o worktree. Medido:
+    as 16 claims declaravam `1319931`, e nesse snapshot os mutantes MC6/MC7 e os dois arquivos
+    de observacao de C-015/C-016 NAO EXISTIAM. A frase impressa - "toda evidencia citada existe
+    em tests/" - era verdadeira sobre o worktree e FALSA sobre o escopo que cada claim declara.
+    Uma alegacao cujo lastro nao existe no snapshot que ela propria nomeia nao esta ancorada:
+    esta datada errado, que e a forma silenciosa de nao estar ancorada.
+
+    Devolve None quando o snapshot nao pode ser lido (git ausente): nao afirmar nem negar.
+    """
+    if commit in _CACHE_SNAP:
+        return _CACHE_SNAP[commit]
+    try:
+        r = subprocess.run(["git", "-C", raiz, "ls-tree", "-r", "--name-only", commit,
+                            "tests/unit/", "tests/mutation/"],
+                           capture_output=True, text=True, timeout=30)
+        if r.returncode != 0:
+            _CACHE_SNAP[commit] = None
+            return None
+        regressoes, mutantes = set(), set()
+        for caminho in r.stdout.splitlines():
+            if not caminho.endswith(".sh"):
+                continue
+            g = subprocess.run(["git", "-C", raiz, "show", f"{commit}:{caminho}"],
+                               capture_output=True, text=True, timeout=30)
+            if g.returncode != 0:
+                continue
+            if caminho.startswith("tests/unit/"):
+                regressoes |= _extrai(g.stdout, RE_CASO, False)
+            else:
+                mutantes |= _extrai(g.stdout, RE_MUT, True)
+        _CACHE_SNAP[commit] = (regressoes, mutantes)
+        return _CACHE_SNAP[commit]
+    except (OSError, subprocess.SubprocessError):
+        _CACHE_SNAP[commit] = None
+        return None
+
+
+def existe_no_commit(raiz, commit, caminho):
+    """O arquivo existe NAQUELE snapshot? None = indecidivel."""
+    try:
+        r = subprocess.run(["git", "-C", raiz, "cat-file", "-e", f"{commit}:{caminho}"],
+                           capture_output=True, timeout=20)
+        return r.returncode == 0
+    except (OSError, subprocess.SubprocessError):
+        return None
 
 
 RE_SHA = re.compile(r"^[0-9a-fA-F]{7,40}$")
@@ -136,12 +198,22 @@ def valida(doc, arquivo, regressoes, mutantes, raiz, vistos):
         erro(f"status '{doc['status']}' fora do vocabulario {sorted(STATUS)}")
 
     escopo = doc.get("scope") or {}
+    snap = None
     if not isinstance(escopo, dict) or not escopo.get("commit"):
         erro("scope.commit ausente - uma alegacao sem snapshot nao e verificavel")
     else:
         ok = commit_existe(raiz, str(escopo["commit"]))
         if ok is False:
             erro(f"scope.commit '{escopo['commit']}' nao existe neste repositorio")
+        elif ok is True and RE_SHA.match(str(escopo["commit"])):
+            # A EVIDENCIA E RESOLVIDA CONTRA O SNAPSHOT DECLARADO, nao contra o worktree.
+            # `RE_SHA` ja validou a forma antes de qualquer chamada ao git.
+            snap = inventario_no_commit(raiz, str(escopo["commit"]))
+            if snap is None:
+                erro("nao foi possivel ler o snapshot de scope.commit - "
+                     "evidencia NAO VERIFICADA contra ele")
+            else:
+                regressoes, mutantes = snap
         elif ok is None:
             # ASSIMETRIA CORRIGIDA: `pyyaml` ausente ja saia 2 (NAO VERIFICADO), mas `git`
             # ausente devolvia None e o programa seguia imprimindo "ledger valido". Duas
@@ -198,6 +270,14 @@ def valida(doc, arquivo, regressoes, mutantes, raiz, vistos):
                 elif not os.path.isfile(alvo):
                     erro(f"evidence.observation.recorded aponta para arquivo inexistente: "
                          f"'{rec}'")
+                elif snap is not None and isinstance(escopo, dict) and escopo.get("commit"):
+                    # Existir no worktree NAO basta: a claim declara um snapshot, e o lastro
+                    # tem de existir NELE. Medido: C-015 e C-016 citavam observacoes que nao
+                    # existiam no commit que declaravam.
+                    v = existe_no_commit(raiz, str(escopo["commit"]), rec)
+                    if v is False:
+                        erro(f"evidence.observation.recorded existe no worktree mas NAO no "
+                             f"snapshot declarado ({escopo['commit']}): '{rec}'")
 
     if refs == 0:
         erro("nenhuma referencia de evidencia (regression, mutants ou observation). "
@@ -253,15 +333,15 @@ def main(argv):
             continue
         erros.extend(valida(doc, caminho, regressoes, mutantes, raiz, vistos))
 
-    print(f"inventario derivado de tests/: {len(regressoes)} regressoes, "
-          f"{len(mutantes)} mutantes")
+    print(f"inventario do worktree: {len(regressoes)} regressoes, {len(mutantes)} mutantes "
+          f"(cada claim e resolvida contra o SEU scope.commit, nao contra este)")
     print(f"claims lidas: {len(arquivos)}")
     if erros:
         print(f"\nVIOLACOES ({len(erros)}):")
         for x in erros:
             print(f"  - {x}")
         return EXIT_VIOLACAO
-    print("ledger valido: toda evidencia citada existe em tests/")
+    print("ledger valido: toda evidencia citada existe no SNAPSHOT que cada claim declara")
     return EXIT_OK
 
 

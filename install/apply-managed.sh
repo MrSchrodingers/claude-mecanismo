@@ -295,6 +295,37 @@ ENFORCE=false; [ "$MODO" = "enforce" ] && ENFORCE=true
 # corresponde a um hook presente - e essa checagem e justamente a que impede ativar apontando
 # para o vazio.
 HOOKS_JSON="$(bash install/hooks-spec.sh "$OPT/hooks")" || exit 1
+
+# PORTAO DE POPULACAO CONTRA A FONTE QUE DECLARA O CONSUMO.
+#
+# O portao anterior era TAUTOLOGICO, e o cabecalho deste arquivo prometia o que ele nao fazia.
+# Ele comparava `n` (itens conformes) com `tipos_politica | wc -l` - e `n` vinha do laco que
+# itera a MESMA `tipos_politica`. So podia falhar com o conjunto vazio. Medido: removendo UMA
+# linha do manifesto (`grep -v` do verify-gate), `--enforce` saia 0, gravava
+# `allowManagedHooksOnly: true`, e a politica declarava `bash .../hooks/verify-gate.sh` para um
+# arquivo QUE NAO EXISTIA. `--verify` sobre esse estado imprimia `0 divergentes` e
+# `conteudo conforme`.
+#
+# O gatilho e o procedimento NORMAL do repositorio, nao sabotagem: `install/manifest.sh` gera
+# por glob de diretorio; renomear ou mover um hook e regenerar produz esse estado.
+#
+# A politica vem de OUTRA fonte - `install/hooks-spec.sh` - e o produto nunca a confrontava com
+# o disco. A propriedade existia apenas no oraculo do teste (MG4), exercitada sobre o manifesto
+# real, onde era vacuamente verdadeira: a garantia morava no TESTE e nao no ARTEFATO, que e a
+# inversao que este repositorio persegue. Agora quem DECLARA o consumo e quem e cobrado.
+AUSENTES=0
+while IFS= read -r _cmd; do
+  _p="${_cmd#bash }"
+  [ -f "$_p" ] || { echo "  HOOK DECLARADO NA POLITICA E AUSENTE NO DISCO: $_p" >&2; AUSENTES=$((AUSENTES+1)); }
+done < <(printf '%s' "$HOOKS_JSON" | jq -r '[..|objects|select(has("command"))|.command]|unique[]')
+if [ "$AUSENTES" -ne 0 ]; then
+  echo "ERRO: a politica declara $AUSENTES hook(s) inexistentes em $OPT." >&2
+  echo "      Nada foi escrito e allowManagedHooksOnly NAO foi ativado." >&2
+  echo "      Politica apontando para o vazio COM enforcement ligado e o mecanismo inteiro" >&2
+  echo "      desligado com aparencia de ligado. Regenere o manifesto e reinstale." >&2
+  exit 1
+fi
+
 # BACKUP SO DO QUE NAO E NOSSO. Defeito encontrado por MG8: a condicao era apenas "existe e
 # ainda nao ha backup", entao a SEGUNDA execucao (deploy e depois --enforce) tratava o arquivo
 # que o proprio instalador havia escrito como se fosse pre-existente. O `--revert` seguinte

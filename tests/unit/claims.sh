@@ -170,9 +170,37 @@ FAKE="$T/repo-sem-testes"; mkdir -p "$FAKE/tests/unit" "$FAKE/tests/mutation"
 rc=$(python3 "$V" "$FAKE" "$REPO/evidence/claims" >/dev/null 2>&1; echo $?)
 chk "extracao vazia -> exit 2, nunca 0" "$rc" 2
 
+echo "== L12. a evidencia e resolvida contra o SNAPSHOT declarado, nao contra o worktree =="
+# PORTAO FINAL, 2026-08-04. `scope.commit` era DECORATIVO: o validador conferia so que o objeto
+# git existia, e resolvia a evidencia contra a arvore de trabalho. Medido: as 16 claims
+# declaravam um commit em que os mutantes MC6/MC7 e as duas observacoes NAO EXISTIAM, e o
+# validador imprimia "toda evidencia citada existe" - verdadeiro sobre o worktree e FALSO sobre
+# o escopo que cada claim declara. Alegacao cujo lastro nao existe no snapshot que ela nomeia
+# nao esta ancorada: esta datada errado, que e a forma silenciosa de nao estar ancorada.
+ANTIGO="$(git -C "$REPO" rev-list --max-parents=1 -n1 HEAD~6 2>/dev/null || git -C "$REPO" rev-parse HEAD~6 2>/dev/null || echo '')"
+if [ -z "$ANTIGO" ]; then
+  echo "  SKIP  historico curto demais para exercitar a resolucao por snapshot"
+else
+  D="$T/l12"; mkdir -p "$D"
+  # a MESMA claim, mudando SO o snapshot: se o resultado nao mudar, a resolucao ignora o campo.
+  cp "$REPO/evidence/claims/C-011.yaml" "$D/C-011.yaml"
+  chk "no snapshot corrente a claim resolve" "$(val "$REPO/evidence/claims")" 0
+  python3 - "$D/C-011.yaml" "$ANTIGO" <<'PY3'
+import sys, yaml
+p, sha = sys.argv[1], sys.argv[2]
+raw = open(p).read()
+head = "\n".join(l for l in raw.split("\n") if l.startswith("#"))
+d = yaml.safe_load(raw); d["scope"]["commit"] = sha
+open(p, "w").write(head + "\n")
+with open(p, "a") as fh:
+    yaml.safe_dump(d, fh, allow_unicode=True, sort_keys=False, width=100)
+PY3
+  chk "  a MESMA claim num snapshot anterior REPROVA (o campo decide)" "$(val "$D")" 1
+fi
+
 echo
 echo "================ PASS=$P  FAIL=$F ================"
-EXPECTED=18
+EXPECTED=20
 if [ "$P" -ne "$EXPECTED" ]; then
   echo "CONTAGEM INESPERADA: PASS=$P, esperado $EXPECTED. Caso removido ou nao executado."
   exit 1

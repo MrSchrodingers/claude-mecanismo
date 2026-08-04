@@ -129,7 +129,14 @@ ANCORA="$ANCORA"'|(^|[`$(>|])[[:space:]]*[a-z][a-z0-9_.+-]*([[:space:]]+[a-z0-9_
 # satisfaziam a ancora sozinhas. Medido na auditoria de 2026-08-04: um retorno cuja unica
 # "evidencia" era "o custo do incidente foi de R$ 500 mil" atravessava o portao.
 # Prompt de shell de verdade abre a linha; cifrao de moeda vem no meio dela.
-ANCORA="$ANCORA"'|^[[:space:]]*[$>][[:space:]]'
+#
+# O `>` FOI REMOVIDO (portao final, 2026-08-04). Ele entrou junto do cifrao sem mencao no
+# comentario, e abriu uma classe que a declaracao de limite nao cobria: `> ` no inicio da linha
+# e BLOCKQUOTE de markdown, a forma corrente de um agente citar prompt, doc ou mensagem de
+# erro. Medido: 8 de 15 retornos de prosa plausivel atravessavam, 3 deles so pelo blockquote.
+# Terceira rodada de regex neste oraculo, terceira vez em que fechar um falso sinal abriu
+# outro - o registro dessa recorrencia esta no ADR 0023.
+ANCORA="$ANCORA"'|^[[:space:]]*\$[[:space:]]'
 
 # SAIDA HONESTA. `NAO VERIFICADO` e resposta valida - o CLAUDE.md declara isso na secao 4 e a
 # mensagem de bloqueio deste proprio hook a promete por escrito. Ela era INEXEQUIVEL: medido,

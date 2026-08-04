@@ -5,7 +5,7 @@ claim: 'A cadeia de suprimentos do gate externo e identificavel: actions por SHA
   imagem nomeada, e excecao de apt declarada por escrito.'
 type: security-property
 scope:
-  commit: '1319931'
+  commit: c3ffe52
   platforms:
   - local-linux
   - github-ubuntu-24.04

@@ -4,7 +4,7 @@ claim_id: C-001
 claim: Um veredito de FALHA em cache nunca e reutilizado como sucesso numa parada posterior.
 type: empirical-invariant
 scope:
-  commit: '1319931'
+  commit: c3ffe52
   platforms:
   - local-linux
   - github-ubuntu-24.04

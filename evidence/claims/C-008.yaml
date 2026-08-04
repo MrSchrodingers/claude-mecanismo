@@ -5,7 +5,7 @@ claim: 'Commit local sem upstream nao desaparece do conjunto de mudancas: o gate
   ha artefato pronto para atravessar.'
 type: empirical-invariant
 scope:
-  commit: '1319931'
+  commit: c3ffe52
   platforms:
   - local-linux
   - github-ubuntu-24.04

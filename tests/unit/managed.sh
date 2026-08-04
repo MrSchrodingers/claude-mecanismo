@@ -217,9 +217,33 @@ chk "  e NAO afirma 'fora do espaco de escrita do ator'" \
 chk "  os arquivos sob ensaio sao mesmo gravaveis (a garantia NAO vale ali)" \
     "$([ -w "$FK8/opt/evidence-gate/hooks/verify-gate.sh" ] && echo gravavel || echo protegido)" "gravavel"
 
+echo "== MG14. politica que declara hook AUSENTE nao pode ser ativada =="
+# PORTAO FINAL, 2026-08-04. O portao de populacao era TAUTOLOGICO: comparava `n` (conformes)
+# com `tipos_politica | wc -l`, e `n` vinha do laco que itera a MESMA fonte. So podia falhar
+# com o conjunto vazio - que e o que MG11 cobre. Remover UMA linha do manifesto passava.
+# Medido: --enforce EXIT=0, allowManagedHooksOnly=true, e a politica declarando
+# `bash .../hooks/verify-gate.sh` para um arquivo INEXISTENTE; --verify sobre esse estado
+# imprimia "0 divergentes" e "conteudo conforme".
+# O gatilho e o procedimento NORMAL: manifest.sh gera por glob, entao renomear ou mover um
+# hook e regenerar produz esse estado sem nenhuma edicao manual.
+# A politica vem de OUTRA fonte (hooks-spec.sh) e o produto nunca a confrontava com o disco -
+# a propriedade existia so no oraculo de MG4, exercitada sobre o manifesto real, onde era
+# vacuamente verdadeira. Garantia no TESTE e nao no ARTEFATO.
+SEMHOOK="$T/sem-um-hook.lock"
+grep -v "evidence/hooks/verify-gate.sh" install/manifest.lock > "$SEMHOOK"
+chk "o manifesto degradado perdeu exatamente 1 linha (senao o caso e outro)" \
+    "$(( $(wc -l < install/manifest.lock) - $(wc -l < "$SEMHOOK") ))" "1"
+chk "  e ele ainda produz componentes (nao e o caso vazio de MG11)" \
+    "$([ "$(awk -F'\t' '!/^#/ && ($1=="hook"||$1=="adapter"||$1=="doctool")' "$SEMHOOK" | wc -l)" -gt 0 ] && echo sim || echo nao)" "sim"
+FK9="$T/raiz9"; mkdir -p "$FK9"
+rc=$(MANAGED_PREFIX="$FK9" MANAGED_MANIFEST="$SEMHOOK" bash "$AM" --enforce >/dev/null 2>&1; echo $?)
+chk "  --enforce REPROVA: a politica declara hook que nao esta no disco" "$rc" 1
+chk "  e allowManagedHooksOnly nao foi ativado" \
+    "$(jq -r '.allowManagedHooksOnly' "$FK9/etc/claude-code/managed-settings.json" 2>/dev/null || echo ausente)" "ausente"
+
 echo
 echo "================ PASS=$P  FAIL=$F ================"
-EXPECTED=42
+EXPECTED=46
 if [ "$P" -ne "$EXPECTED" ]; then
   echo "CONTAGEM INESPERADA: PASS=$P, esperado $EXPECTED. Caso removido ou nao executado."
   exit 1

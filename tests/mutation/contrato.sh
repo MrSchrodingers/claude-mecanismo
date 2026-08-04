@@ -112,7 +112,7 @@ mutante MC6 "prompt de shell ancorado no inicio da linha" "cifrao de MOEDA" <<'M
 import sys
 p = sys.argv[1]
 s = open(p).read()
-alvo = "ANCORA=\"$ANCORA\"'|^[[:space:]]*[$>][[:space:]]'"
+alvo = "ANCORA=\"$ANCORA\"'|^[[:space:]]*\\$[[:space:]]'"
 assert alvo in s, "padrao do prompt ancorado nao encontrado"
 s = s.replace(alvo, "ANCORA=\"$ANCORA\"'|\\$ '")
 open(p, 'w').write(s)

@@ -5,7 +5,7 @@ claim: O contrato de retorno de subagente aceita evidencia real em PT-BR, e inva
   retorno sem ancora.
 type: empirical-invariant
 scope:
-  commit: '1319931'
+  commit: c3ffe52
   platforms:
   - local-linux
   - github-ubuntu-24.04

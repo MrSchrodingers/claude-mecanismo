@@ -5,7 +5,7 @@ claim: Hooks de plugin SOMAM aos hooks de escopo de usuario; nao os sobrepoem. A
   do ADR 0022 nao se realizou.
 type: runtime-observation
 scope:
-  commit: '1319931'
+  commit: c3ffe52
   platforms:
   - local-linux
   - github-ubuntu-24.04

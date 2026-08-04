@@ -12,10 +12,10 @@ O README referencia este arquivo em vez de duplicar numeros.
 | `tests/unit/supply-chain.sh` | 6 | 0 |
 | `tests/unit/reprodutibilidade.sh` | variavel (ambiente) | 0 |
 | `tests/unit/concorrencia.sh` | 8 | 0 |
-| `tests/unit/claims.sh` | 18 | 0 |
+| `tests/unit/claims.sh` | 20 | 0 |
 | `tests/unit/propriedades.sh` | 22 | 0 |
-| `tests/unit/managed.sh` | 42 | 0 |
-| `tests/unit/run.sh` | 52 | 0 |
+| `tests/unit/managed.sh` | 46 | 0 |
+| `tests/unit/run.sh` | 53 | 0 |
 
 ## Mutacao
 

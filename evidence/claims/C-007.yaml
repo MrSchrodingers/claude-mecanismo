@@ -4,7 +4,7 @@ claim_id: C-007
 claim: O modo --dry-run do instalador nao altera estado algum, byte a byte.
 type: security-property
 scope:
-  commit: '1319931'
+  commit: c3ffe52
   platforms:
   - local-linux
   - github-ubuntu-24.04
