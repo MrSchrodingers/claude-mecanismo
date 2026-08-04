@@ -207,8 +207,23 @@ ator. O que existe, e o que não existe, precisa ser dito com precisão — porq
 demais quanto declarar de menos deixam o leitor sem saber o que falta:
 
 - **existe**: `install/apply-managed.sh`, instalador root-owned que constrói a árvore em uma
-  área de staging, aplica posse e modo lá, roda **todos** os portões contra o staging e só então
-  publica. Deploy reprovado deixa a árvore ativa byte a byte inalterada (caso MG15);
+  área de staging, aplica posse e modo lá, roda **todos** os portões contra o staging, gera e
+  valida a política **antes** de tocar qualquer coisa ativa, e só então executa uma fase de
+  commit composta apenas de renames verificados. O estado ativo é o par
+  (árvore em `/opt/evidence-gate`, política em `managed-settings.json`), e falha **observada**
+  em qualquer ponto devolve os dois (MG15, MG17, MG18; mutantes MI2 e MI3).
+
+  A primeira versão desta correção publicava `DeployFail ⇒ ActiveState inalterado` mas entregava
+  só `GateFail_{pré-publicação} ⇒ árvore inalterada`: a árvore era publicada e a anterior
+  apagada **antes** de a política ser gerada, com `jq`, `cp`, `chmod` e `chown` sem retorno
+  verificado num script sem `set -e`. Uma revisão independente encontrou o buraco; `MG17` o
+  reproduz por injeção determinística (`MANAGED_FAILPOINT`) e `MI3` é o mutante atribuível.
+
+  **O que continua fora**: terminação que o shell não observa. `rename(2)` não substitui
+  diretório não vazio, então a troca da árvore são duas chamadas; `SIGKILL` ou queda entre elas
+  deixa `/opt/evidence-gate` ausente. Isso é disponibilidade, não árvore meio-escrita, e não há
+  rollback possível de dentro de um processo morto. Fechar exigiria o caminho ativo ser um
+  symlink trocado por um único rename — muda o layout, o `--verify` e o `--revert`;
 - **não existe**: a **ativação**. `allowManagedHooksOnly` exige `sudo` e não foi ligado;
 - **não existe**: o fechamento da cadeia. Duas dependências continuam no espaço do ator — o
   próprio checkout de onde `apply-managed.sh` é invocado (um script que o ator pode editar antes

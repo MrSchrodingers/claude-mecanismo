@@ -312,9 +312,50 @@ def _valida_blob(doc, obs, rec, raiz, arquivo):
 
 
 RE_RUN_ID = re.compile(r"^[0-9]{1,20}$")
+_CACHE_WF = {}
 
 
-def _valida_ci(ci, raiz, arquivo):
+def workflows_no_commit(raiz, commit):
+    """Nomes de workflow declarados NAQUELE snapshot. None = indecidivel.
+
+    POR QUE ISTO EXISTE (revisao independente do PR #5). `ci.workflow` era escrito mas nao
+    validado: `workflow: workflow-que-nunca-existiu` passava. Campo com aparencia de rastro e
+    sem poder de discriminacao e a versao menor do defeito que este ledger inteiro persegue.
+
+    O nome e resolvido contra o SNAPSHOT, e nao contra o worktree, porque o workflow pode ter
+    sido renomeado depois - e foi: `verify` virou `verify-pr`/`verify-push` em 8f7b543. Uma
+    claim sobre c3ffe52 cita corretamente `verify`, que existia la e nao existe hoje.
+    """
+    if commit in _CACHE_WF:
+        return _CACHE_WF[commit]
+    try:
+        r = subprocess.run(["git", "-C", raiz, "ls-tree", "-r", "--name-only", commit,
+                            ".github/workflows/"], capture_output=True, text=True, timeout=30)
+        if r.returncode != 0:
+            _CACHE_WF[commit] = None
+            return None
+        nomes = set()
+        for caminho in r.stdout.splitlines():
+            if not caminho.endswith((".yml", ".yaml")):
+                continue
+            g = subprocess.run(["git", "-C", raiz, "show", f"{commit}:{caminho}"],
+                               capture_output=True, text=True, timeout=30)
+            if g.returncode != 0:
+                continue
+            try:
+                doc = yaml.safe_load(g.stdout)
+            except yaml.YAMLError:
+                continue
+            if isinstance(doc, dict) and doc.get("name"):
+                nomes.add(str(doc["name"]))
+        _CACHE_WF[commit] = nomes
+        return nomes
+    except (OSError, subprocess.SubprocessError):
+        _CACHE_WF[commit] = None
+        return None
+
+
+def _valida_ci(ci, raiz, arquivo, sujeito=None):
     """`ci_run` (v1) era a URL do WORKFLOW - a mesma para toda claim, e portanto sem poder de
     identificacao: nao dizia QUAL execucao, sobre QUAL commit, com QUAL resultado. Uma referencia
     que nao discrimina nada e decoracao com forma de rastro.
@@ -345,6 +386,21 @@ def _valida_ci(ci, raiz, arquivo):
         ok = commit_existe(raiz, hs)
         if ok is False:
             erro(f"evidence.ci.head_sha '{hs[:12]}...' nao e um commit deste repositorio")
+
+    # `workflow` deixou de ser decorativo: e resolvido contra os workflows que existiam NO
+    # SNAPSHOT da claim. Resolver contra o worktree seria errado - `verify` existia em c3ffe52
+    # e nao existe hoje, e as claims daquele snapshot o citam corretamente.
+    wf = ci.get("workflow")
+    if not wf:
+        erro("evidence.ci.workflow ausente - sem ele nao se sabe QUAL verificacao rodou")
+    elif sujeito:
+        nomes = workflows_no_commit(raiz, sujeito)
+        if nomes is None:
+            erro("nao foi possivel ler os workflows do snapshot - "
+                 "evidence.ci.workflow NAO VERIFICADO")
+        elif str(wf) not in nomes:
+            erro(f"evidence.ci.workflow '{wf}' nao existe no snapshot declarado "
+                 f"({sujeito[:12]}...). Workflows la: {sorted(nomes) or 'nenhum'}")
     return e
 
 
@@ -482,7 +538,8 @@ def valida(doc, arquivo, regressoes, mutantes, raiz, vistos):
 
     ci = ev.get("ci")
     if ci is not None:
-        e.extend(_valida_ci(ci, raiz, arquivo))
+        e.extend(_valida_ci(ci, raiz, arquivo,
+                            str(escopo.get("subject_snapshot") or "") if isinstance(escopo, dict) else ""))
 
     if refs == 0:
         erro("nenhuma referencia de evidencia (regression, mutants ou observation). "

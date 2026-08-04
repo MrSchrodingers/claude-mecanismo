@@ -18,7 +18,7 @@ TMP="$(mktemp -d)"
 trap 'cp -f "$TMP/orig.sh" "$ORIG" 2>/dev/null; cp -f "$TMP/orig-managed.sh" "$ORIG_M" 2>/dev/null; rm -rf "$TMP"' EXIT
 cp -f "$ORIG" "$TMP/orig.sh"
 cp -f "$ORIG_M" "$TMP/orig-managed.sh"
-P=0; F=0; EXPECTED_MUTANTS=2
+P=0; F=0; EXPECTED_MUTANTS=3
 
 echo "== baseline =="
 if bash "$REG" >/dev/null 2>&1; then echo "  PASS  baseline verde"; else echo "  FAIL  baseline vermelho; abortando"; exit 1; fi
@@ -72,6 +72,43 @@ else
     echo "  PASS  MI2 morto pelo caso certo (MG15)"; P=$((P+1))
   else
     echo "  FAIL  MI2: reprovou, mas nao em MG15 - kill nao atribuivel"; F=$((F+1))
+    printf '%s\n' "$out" | grep FAIL | sed 's/^/        /'
+  fi
+fi
+cp -f "$TMP/orig-managed.sh" "$ORIG_M"
+
+# MI3: o material de rollback e descartado ASSIM QUE a arvore e publicada, antes de a politica
+# estar instalada. E exatamente o defeito que a revisao independente do PR #5 encontrou: a
+# propriedade publicada era `DeployFail => ActiveState inalterado`, e o codigo so a entregava
+# para falhas ANTERIORES a publicacao. Depois dela, `mktemp`, `jq`, `cp`, `chmod` e `chown`
+# rodavam sem retorno verificado e sem nada para desfazer.
+#
+# MI2 nao cobre isto: ele move a publicacao para ANTES dos portoes, e morre em MG15. Este mutante
+# mantem a ordem correta e destroi so a capacidade de DESFAZER - por isso precisa do failpoint,
+# que e o unico jeito de provocar a falha pos-publicacao de forma deterministica.
+cp -f "$TMP/orig-managed.sh" "$ORIG_M"
+python3 - "$ORIG_M" <<'PYM'
+import sys
+p = sys.argv[1]; s = open(p, encoding="utf-8").read()
+alvo = '''if ! mv -f "$SET_NOVO" "$SETTINGS"; then'''
+if s.count(alvo) != 1:
+    sys.exit("ANCORA NAO CASOU (%d ocorrencias)" % s.count(alvo))
+# descarta o rollback antes de instalar a politica
+s = s.replace(alvo, 'rm -rf "$ANTERIOR" 2>/dev/null || true   # MUTANTE\n' + alvo)
+open(p, "w", encoding="utf-8").write(s)
+PYM
+if cmp -s "$TMP/orig-managed.sh" "$ORIG_M"; then
+  echo "  FAIL  MI3 NAO FOI APLICADO (padrao nao casa)"; F=$((F+1))
+elif ! bash -n "$ORIG_M" 2>/dev/null; then
+  echo "  FAIL  MI3 nao compila"; F=$((F+1))
+else
+  out="$(bash "$REG_M" 2>&1)"; rc=$?
+  if [ "$rc" -eq 0 ]; then
+    echo "  FAIL  MI3 SOBREVIVEU - falha pos-publicacao deixa o estado ativo alterado sem sinal"; F=$((F+1))
+  elif printf '%s' "$out" | grep -q "FAIL.*estado ativo INTEIRO volta ao anterior"; then
+    echo "  PASS  MI3 morto pelo caso certo (MG17)"; P=$((P+1))
+  else
+    echo "  FAIL  MI3: reprovou, mas nao em MG17 - kill nao atribuivel"; F=$((F+1))
     printf '%s\n' "$out" | grep FAIL | sed 's/^/        /'
   fi
 fi

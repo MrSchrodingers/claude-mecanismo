@@ -245,6 +245,19 @@ fi
 #
 #     DeployFail  =>  ActiveState_depois == ActiveState_antes
 #
+# ESCOPO EXATO DESSA IMPLICACAO, porque publica-la larga demais ja custou uma revisao:
+#   ActiveState = (arvore em $OPT, politica em $SETTINGS). AS DUAS metades.
+#   DeployFail  = qualquer saida != 0 deste script POR ERRO OBSERVADO - portao, `jq`, `cp`,
+#                 `chmod`, `chown`, `mv`. Cada uma dessas chamadas tem retorno verificado, e a
+#                 fase de commit chama `desfaz` antes de sair.
+#   NAO COBERTO  = terminacao que o shell nao observa: `SIGKILL`, queda de energia, filesystem
+#                 desmontado no meio. `rename(2)` nao substitui diretorio nao vazio, entao a
+#                 troca da arvore sao DUAS chamadas, e uma morte subita entre elas deixa $OPT
+#                 ausente. Isso e disponibilidade, nao arvore meio-escrita, e nao ha rollback
+#                 possivel de dentro do processo morto. Fechar essa janela exigiria $OPT ser um
+#                 symlink trocado por um unico rename - muda o layout, o `--verify`, o
+#                 `--revert` e a checagem de posse. Nao feito; registrado no roadmap.
+#
 # Agora a construcao inteira acontece numa area de staging irmã, todo portao roda LA, e a arvore
 # ativa so e tocada quando nada mais pode reprovar. Reprovou: a area de staging e descartada e a
 # ativa nunca foi aberta.
@@ -363,32 +376,64 @@ if [ "$AUSENTES" -ne 0 ]; then
   exit 1
 fi
 
-# --- PUBLICACAO ------------------------------------------------------------------------------
-# Ultimo portao passou: a partir daqui a arvore ativa pode ser tocada. A troca e por `mv` dentro
-# do MESMO diretorio pai, que e rename(2) - nao ha copia, nao ha janela de arvore meio-escrita.
+# =============================================================================================
+# ESTADO ATIVO = (arvore em $OPT, politica em $SETTINGS). OS DOIS, e nao so a arvore.
 #
-# LIMITE DECLARADO, e ele e real: `rename(2)` nao substitui diretorio nao vazio, entao a troca
-# sao DUAS chamadas (ativa->anterior, staging->ativa) e nao uma. Entre elas ha uma janela de
-# microssegundos em que $OPT nao existe. Isto NAO e atomicidade plena, e chamar de atomica seria
-# a imprecisao que este repositorio persegue. O que esta garantido e a propriedade que faltava:
-#   - falha em QUALQUER portao => a ativa nunca foi aberta;
-#   - falha na segunda troca    => a anterior e recolocada (rollback abaixo);
-#   - nunca existe arvore ativa com metade dos componentes na versao nova.
-# Atomicidade plena exigiria $OPT ser um symlink trocado por rename - muda o layout em disco,
-# o `--verify`, o `--revert` e a checagem de posse. Nao feito aqui; registrado no roadmap.
-ANTERIOR="$OPT.anterior.$$"
-if [ -d "$OPT" ]; then
-  mv -f "$OPT" "$ANTERIOR" || { echo "ERRO: nao foi possivel afastar a arvore ativa; nada mudou." >&2; exit 1; }
-fi
-if ! mv -f "$STAGE" "$OPT"; then
-  echo "ERRO: a publicacao falhou apos afastar a arvore ativa." >&2
-  if [ -d "$ANTERIOR" ]; then
-    mv -f "$ANTERIOR" "$OPT" && echo "      ROLLBACK: a arvore anterior foi recolocada em $OPT." >&2
-  fi
+# SEGUNDA CORRECAO (revisao independente do PR #5). A versao anterior publicava a arvore, APAGAVA
+# a anterior, e so entao gerava e instalava o `managed-settings.json` - com `mktemp`, `jq`, `cp`,
+# `chmod` e `chown` todos apos o ponto sem volta, e nenhum deles com retorno verificado num
+# script que roda sob `set -uo pipefail`, sem `set -e`. Consequencias reais:
+#
+#   - `mktemp`/`jq` falhando  -> `exit 1` com a arvore ativa JA trocada e a anterior JA apagada;
+#   - `cp` falhando           -> execucao SEGUIA, imprimia a mensagem de sucesso e saia 0, com a
+#                                arvore nova e a politica velha (ou ausente);
+#   - `chmod`/`chown` falhando -> idem.
+#
+# A propriedade PUBLICADA era `DeployFail => ActiveState inalterado`. A propriedade ENTREGUE era
+# `GateFail_{pre-publicacao} => OptTree inalterada`. Publicar a primeira enquanto o codigo
+# entregava a segunda e exatamente a classe de defeito que este repositorio persegue - mensagem
+# que promete mais do que o mecanismo cumpre - e aconteceu no proprio commit que dizia corrigi-la.
+#
+# A correcao tem duas partes:
+#
+#   1. TUDO QUE PODE FALHAR ACONTECE ANTES. A politica e gerada e validada enquanto o estado
+#      ativo ainda esta intocado. Ela nao depende do staging: os caminhos que ela declara sao os
+#      caminhos FINAIS, conhecidos desde o inicio.
+#   2. A FASE DE COMMIT SO CONTEM RENAMES, cada um com retorno verificado, e o material de
+#      rollback (arvore anterior e politica anterior) so e descartado quando os dois ja estao
+#      no lugar. Qualquer falha ali chama `desfaz`, que devolve OS DOIS.
+# =============================================================================================
+
+# --- FASE DE PREPARO: nada aqui toca o estado ativo -------------------------------------------
+# O temporario vive em $ETC, e nao em /tmp, para que a instalacao final seja `rename(2)` no MESMO
+# filesystem - atomico - em vez de `cp`, que tem estado intermediario observavel.
+SET_NOVO="$ETC/.managed-settings.json.novo.$$"
+SET_ROLLBACK="$ETC/.managed-settings.json.rollback.$$"
+trap 'rm -rf "$STAGE" "$SET_NOVO" "$SET_ROLLBACK" 2>/dev/null || true' EXIT
+
+if ! jq -n --argjson h "$HOOKS_JSON" --argjson enf "$ENFORCE" --arg rp "$REPO" \
+      --arg ad "$OPT/adapters/code" --arg dd "$OPT/adapters/documents" \
+      '{_managed_by:"evidence-gate", allowManagedHooksOnly:$enf, hooks:$h,
+        env:{CLAUDE_ADAPTERS_DIR:$ad, DOC_ADAPTERS_DIR:$dd, EVIDENCE_GATE_REPO:$rp}}' \
+      > "$SET_NOVO" || ! jq -e . "$SET_NOVO" >/dev/null 2>&1; then
+  echo "ERRO: managed-settings.json nao pode ser gerado ou nao e JSON valido." >&2
+  echo "      NADA foi alterado: nem a arvore ativa, nem a politica." >&2
   exit 1
 fi
-rm -rf "$ANTERIOR" 2>/dev/null || true
-RAIZ="$OPT"   # publicado: validar volta a significar validar a arvore ativa
+chmod 0644 "$SET_NOVO" || { echo "ERRO: chmod da politica nova falhou; nada foi alterado." >&2; exit 1; }
+if [ "$REAL" -eq 1 ]; then
+  chown root:root "$SET_NOVO" || { echo "ERRO: chown da politica nova falhou; nada foi alterado." >&2; exit 1; }
+fi
+
+# COPIA DE ROLLBACK da politica atual. Distinta do backup `.pre-evidence-gate`, que tem outra
+# funcao (preservar politica de TERCEIRO, ver MG8/MG12) e outra duracao (permanente). Esta e
+# efemera e existe so para desfazer uma fase de commit que falhou pela metade.
+TEM_ROLLBACK=0
+if [ -f "$SETTINGS" ]; then
+  cp -f "$SETTINGS" "$SET_ROLLBACK" \
+    || { echo "ERRO: nao foi possivel copiar a politica atual para rollback; nada mudou." >&2; exit 1; }
+  TEM_ROLLBACK=1
+fi
 
 # BACKUP SO DO QUE NAO E NOSSO. Defeito encontrado por MG8: a condicao era apenas "existe e
 # ainda nao ha backup", entao a SEGUNDA execucao (deploy e depois --enforce) tratava o arquivo
@@ -396,21 +441,63 @@ RAIZ="$OPT"   # publicado: validar volta a significar validar a arvore ativa
 # restaurava esse "backup" e recriava a politica - reversao que nao reverte, que e pior do que
 # nao ter reversao, porque o operador acredita ter voltado ao estado anterior.
 # A marca `_managed_by` responde "este arquivo e nosso?" sem depender de heuristica.
+FEZ_PRE=0
 if [ -f "$SETTINGS" ] && [ ! -f "$SETTINGS.pre-evidence-gate" ] \
    && ! jq -e '._managed_by == "evidence-gate"' "$SETTINGS" >/dev/null 2>&1; then
-  cp -f "$SETTINGS" "$SETTINGS.pre-evidence-gate"
+  cp -f "$SETTINGS" "$SETTINGS.pre-evidence-gate" \
+    || { echo "ERRO: backup da politica de terceiro falhou; nada mudou." >&2; exit 1; }
+  FEZ_PRE=1
 fi
-TMP="$(mktemp)"
-if jq -n --argjson h "$HOOKS_JSON" --argjson enf "$ENFORCE" --arg rp "$REPO" \
-      --arg ad "$OPT/adapters/code" --arg dd "$OPT/adapters/documents" \
-      '{_managed_by:"evidence-gate", allowManagedHooksOnly:$enf, hooks:$h,
-        env:{CLAUDE_ADAPTERS_DIR:$ad, DOC_ADAPTERS_DIR:$dd, EVIDENCE_GATE_REPO:$rp}}' \
-      > "$TMP" && jq -e . "$TMP" >/dev/null; then
-  cp -f "$TMP" "$SETTINGS"; rm -f "$TMP"; chmod 0644 "$SETTINGS"
-  [ "$REAL" -eq 1 ] && chown root:root "$SETTINGS"
-else
-  rm -f "$TMP"; echo "ERRO: managed-settings.json nao pode ser gerado - nada foi alterado nele" >&2; exit 1
+
+# --- FASE DE COMMIT: so renames, cada um verificado -------------------------------------------
+ANTERIOR="$OPT.anterior.$$"
+
+desfaz(){  # devolve o estado ativo INTEIRO ao que era: arvore E politica
+  if [ -d "$ANTERIOR" ]; then
+    rm -rf "$OPT" 2>/dev/null || true
+    mv -f "$ANTERIOR" "$OPT" 2>/dev/null \
+      && echo "      ROLLBACK: arvore anterior recolocada em $OPT." >&2 \
+      || echo "      ATENCAO: o rollback da arvore FALHOU; $OPT pode estar ausente." >&2
+  fi
+  if [ "$TEM_ROLLBACK" -eq 1 ] && [ -f "$SET_ROLLBACK" ]; then
+    mv -f "$SET_ROLLBACK" "$SETTINGS" 2>/dev/null \
+      && echo "      ROLLBACK: politica anterior recolocada em $SETTINGS." >&2 \
+      || echo "      ATENCAO: o rollback da politica FALHOU." >&2
+  elif [ "$TEM_ROLLBACK" -eq 0 ]; then
+    # nao havia politica antes; o estado anterior e a AUSENCIA dela
+    rm -f "$SETTINGS" 2>/dev/null || true
+  fi
+  [ "$FEZ_PRE" -eq 1 ] && rm -f "$SETTINGS.pre-evidence-gate" 2>/dev/null || true
+}
+
+# FAILPOINT - existe SO para teste (tests/unit/managed.sh, MG17/MG18). Sem a variavel definida
+# e um no-op. Nao concede autoridade alguma: o unico efeito possivel e provocar uma falha e o
+# rollback correspondente. Sem ele, a falha POS-PUBLICACAO nao pode ser exercitada de forma
+# deterministica - e foi justamente a ausencia desse caso que deixou o defeito acima passar.
+falha_se(){ [ "${MANAGED_FAILPOINT:-}" = "$1" ] && { echo "ERRO: falha injetada no ponto '$1'." >&2; return 0; }; return 1; }
+
+if [ -d "$OPT" ]; then
+  mv -f "$OPT" "$ANTERIOR" \
+    || { echo "ERRO: nao foi possivel afastar a arvore ativa; nada mudou." >&2; exit 1; }
 fi
+if falha_se afastar-opt; then desfaz; exit 1; fi
+
+if ! mv -f "$STAGE" "$OPT"; then
+  echo "ERRO: a publicacao da arvore falhou." >&2; desfaz; exit 1
+fi
+if falha_se publicar-opt; then desfaz; exit 1; fi
+
+if ! mv -f "$SET_NOVO" "$SETTINGS"; then
+  echo "ERRO: a instalacao da politica falhou APOS a publicacao da arvore." >&2
+  desfaz; exit 1
+fi
+if falha_se instalar-politica; then desfaz; exit 1; fi
+
+# COMMIT CONFIRMADO. So agora o material de rollback pode ser descartado - antes disto, qualquer
+# saida do script passa por `desfaz` ou pelo trap, e ambos precisam dele.
+rm -rf "$ANTERIOR" 2>/dev/null || true
+rm -f "$SET_ROLLBACK" 2>/dev/null || true
+RAIZ="$OPT"   # publicado: validar volta a significar validar a arvore ativa
 
 if [ "$MODO" = "enforce" ]; then
   echo "allowManagedHooksOnly=true - hooks de escopo de USUARIO e de PLUGIN estao agora bloqueados."

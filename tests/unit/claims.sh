@@ -256,7 +256,9 @@ ci_fixture(){ # $1=destino  $2=run_id  $3=head_sha
 python3 - "$1" "$2" "$3" "$SHA" <<'PY3'
 import sys, yaml
 dest, run_id, head, sha = sys.argv[1:5]
-ci = {}
+# `workflow` sempre presente e VALIDO: estes casos medem run_id e head_sha, e deixar o
+# workflow de fora faria a reprovacao ter duas causas e a atribuicao virar adivinhacao.
+ci = {"workflow": "verify-pr"}
 if run_id: ci["run_id"] = run_id
 if head: ci["head_sha"] = head
 d = {"claim_id":"C-001","claim":"ci","type":"empirical-invariant",
@@ -275,6 +277,38 @@ ci_fixture "$D/C-001.yaml" "30924006484" "deadbeefdeadbeefdeadbeefdeadbeefdeadbe
 chk "  head_sha que nao e commit deste repo -> reprova" "$(val "$D")" 1
 D="$T/l17d"; mkdir -p "$D"; ci_fixture "$D/C-001.yaml" "30924006484" "$SHA"
 chk "  run_id numerico + head_sha real passa" "$(val "$D")" 0
+
+echo "== L18. evidence.ci.workflow e resolvido contra o SNAPSHOT, nao e decorativo =="
+# Achado da revisao independente do PR #5: `workflow` era escrito e nunca validado - qualquer
+# string passava. Campo com aparencia de rastro e sem poder de discriminacao e a versao menor do
+# defeito que este ledger inteiro persegue.
+# RESOLVIDO CONTRA O SNAPSHOT, e nao contra o worktree: `verify` existia em c3ffe52 e nao existe
+# mais hoje (virou verify-pr/verify-push). As claims daquele snapshot o citam CORRETAMENTE.
+wf_fixture(){ # $1=destino  $2=nome do workflow  $3=subject_snapshot
+python3 - "$1" "$2" "$3" <<'PY4'
+import sys, yaml
+dest, wf, sha = sys.argv[1:4]
+d = {"claim_id":"C-001","claim":"workflow","type":"empirical-invariant",
+     "scope":{"subject_snapshot":sha,"platforms":["local-linux"]},
+     "evidence":{"regression":["G1"],
+                 "ci":{"run_id":30924006484,"head_sha":sha,"workflow":wf}},
+     "warrant":"fixture","limitations":["fixture"],"status":"supported-in-tested-domain"}
+yaml.safe_dump(d, open(dest,"w"), allow_unicode=True, sort_keys=False)
+PY4
+}
+ANTIGO="$(git -C "$REPO" rev-parse c3ffe52 2>/dev/null || echo '')"
+if [ -z "$ANTIGO" ]; then
+  echo "  SKIP  snapshot c3ffe52 indisponivel"
+else
+  D="$T/l18"; mkdir -p "$D"; wf_fixture "$D/C-001.yaml" "workflow-que-nunca-existiu" "$ANTIGO"
+  chk "workflow inexistente no snapshot -> reprova" "$(val "$D")" 1
+  D="$T/l18b"; mkdir -p "$D"; wf_fixture "$D/C-001.yaml" "verify" "$ANTIGO"
+  chk "  e 'verify', que existia NAQUELE snapshot, passa" "$(val "$D")" 0
+  # O CONTROLE QUE PROVA A RESOLUCAO POR SNAPSHOT: `verify-pr` existe HOJE e NAO existia em
+  # c3ffe52. Se o validador resolvesse contra o worktree, este caso passaria.
+  D="$T/l18c"; mkdir -p "$D"; wf_fixture "$D/C-001.yaml" "verify-pr" "$ANTIGO"
+  chk "  e 'verify-pr' (existe hoje, NAO existia la) reprova" "$(val "$D")" 1
+fi
 
 echo "== L10. inventario vazio e NAO VERIFICADO, nao ledger valido =="
 # Autochecagem: se o contrato de extracao deixar de casar com tests/, o validador precisa
@@ -323,7 +357,7 @@ fi
 
 echo
 echo "================ PASS=$P  FAIL=$F ================"
-EXPECTED=34
+EXPECTED=37
 if [ "$P" -ne "$EXPECTED" ]; then
   echo "CONTAGEM INESPERADA: PASS=$P, esperado $EXPECTED. Caso removido ou nao executado."
   exit 1

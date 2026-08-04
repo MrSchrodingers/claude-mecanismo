@@ -12,10 +12,10 @@ O README referencia este arquivo em vez de duplicar numeros.
 | `tests/unit/supply-chain.sh` | 6 | 0 |
 | `tests/unit/reprodutibilidade.sh` | variavel (ambiente) | 0 |
 | `tests/unit/concorrencia.sh` | 8 | 0 |
-| `tests/unit/claims.sh` | 34 | 0 |
+| `tests/unit/claims.sh` | 37 | 0 |
 | `tests/unit/propriedades.sh` | 22 | 0 |
-| `tests/unit/fronteira-externa.sh` | 6 | 0 |
-| `tests/unit/managed.sh` | 53 | 0 |
+| `tests/unit/fronteira-externa.sh` | 11 | 0 |
+| `tests/unit/managed.sh` | 65 | 0 |
 | `tests/unit/run.sh` | 53 | 0 |
 
 ## Mutacao
@@ -24,8 +24,8 @@ O README referencia este arquivo em vez de duplicar numeros.
 |---|---:|---:|
 | gate | 13 | 0 |
 | contrato de subagente | 9 | 0 |
-| instalador | 2 | 0 |
-| fronteira externa | 4 | 0 |
+| instalador | 3 | 0 |
+| fronteira externa | 7 | 0 |
 
 ## Componentes
 
@@ -49,6 +49,10 @@ O README referencia este arquivo em vez de duplicar numeros.
 - sem corpus de desfecho: nenhuma afirmacao sobre eficacia de engenharia
 - sem auditoria autoralmente independente: a CI e observador ambiental
 - sem sandbox: parsers de documento rodam com a autoridade do usuario
+- deploy managed: `DeployFail => ActiveState inalterado` vale para falha OBSERVADA
+  (portao, jq, cp, chmod, chown, mv). NAO cobre terminacao que o shell nao observa -
+  SIGKILL ou queda entre os dois renames da arvore deixa $OPT ausente. Fechar exigiria
+  $OPT como symlink trocado por um unico rename, mudando layout, --verify e --revert
 - o ruleset IMPOE, mas quem tem admin pode DESATIVA-LO: nao ha bypass dentro da
   regra (medido), e nao que a regra seja irremovivel
 
@@ -69,3 +73,10 @@ O README referencia este arquivo em vez de duplicar numeros.
 - `deploy managed podia deixar a arvore ativa parcial`: a copia ia direto no destino e
   os portoes rodavam depois. Agora e staging com publicacao APOS os portoes; MG15
   compara o digest da arvore inteira antes e depois de um deploy reprovado
+- `falha POS-publicacao alterava o estado ativo`: achado por revisao independente do
+  PR #5. A arvore era publicada e a anterior APAGADA antes de `managed-settings.json`
+  ser gerado e instalado, com `jq`/`cp`/`chmod`/`chown` sem retorno verificado. Agora
+  a politica e gerada e validada ANTES de tocar o estado ativo, a fase de commit so
+  contem renames verificados, e o material de rollback so e descartado quando arvore e
+  politica ja estao no lugar. MG17 usa `MANAGED_FAILPOINT` para provocar a falha
+  pos-publicacao; MI3 e o mutante atribuivel

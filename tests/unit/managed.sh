@@ -291,9 +291,83 @@ chk "nenhum diretorio *.stage.* remanescente" \
 chk "  nem *.anterior.* (a troca limpa o que afastou)" \
     "$(find "$FK15/opt" -maxdepth 1 -name 'evidence-gate.anterior.*' 2>/dev/null | wc -l | tr -d ' ')" "0"
 
+echo "== MG17. falha APOS a publicacao devolve o estado ativo INTEIRO =="
+# SEGUNDO ACHADO SOBRE ESTE MESMO CODIGO (revisao independente do PR #5). MG15 so provoca falha
+# ANTES da publicacao, entao provava a propriedade estreita
+#     GateFail_{pre-publicacao} => OptTree inalterada
+# enquanto o commit, o PR e o README publicavam a propriedade larga
+#     DeployFail => ActiveState inalterado.
+# O dominio exercitado nao continha o contraexemplo: apos publicar a arvore, o script ainda
+# gerava e instalava o `managed-settings.json` com `mktemp`, `jq`, `cp`, `chmod` e `chown`, todos
+# APOS o ponto sem volta e nenhum com retorno verificado sob `set -uo pipefail` sem `set -e`.
+#
+# DUAS MUDANCAS DE ORACULO, e sao elas que dao poder de decisao a estes casos:
+#   1. ESTADO ATIVO = (arvore, politica). MG15 olhava so a arvore; a metade que faltava era
+#      justamente a que podia divergir.
+#   2. O segundo deploy precisa produzir um estado DIFERENTE. Com o mesmo manifesto e o mesmo
+#      modo, os digests coincidiriam mesmo com o rollback quebrado - caso vacuo. Aqui o segundo
+#      deploy usa `--enforce` (muda allowManagedHooksOnly) sobre um manifesto com um adaptador a
+#      menos (muda a arvore). As duas metades do estado mudariam se o rollback falhasse.
+estado_ativo(){ # $1 = prefixo; ecoa "digest_arvore|digest_politica"
+  local a p
+  if [ -d "$1/opt/evidence-gate" ]; then
+    a="$(cd "$1/opt/evidence-gate" && find . -type f -exec sha256sum {} + 2>/dev/null \
+         | LC_ALL=C sort -k2 | sha256sum | cut -d' ' -f1)"
+  else a="ARVORE_AUSENTE"; fi
+  if [ -f "$1/etc/claude-code/managed-settings.json" ]; then
+    p="$(sha256sum "$1/etc/claude-code/managed-settings.json" | cut -d' ' -f1)"
+  else p="POLITICA_AUSENTE"; fi
+  printf '%s|%s\n' "$a" "$p"
+}
+MENOS="$T/menos-um-adaptador.lock"
+# ADAPTADOR, e nao hook: remover hook reprova no portao de populacao ANTES da publicacao (MG14),
+# e o caso nunca chegaria a fase que precisa ser exercitada.
+# `!seen++` e nao `seen++`: pos-incremento faz a primeira ocorrencia valer 0 (falso), entao
+# `&& seen++` casaria a partir da SEGUNDA e removeria todas menos a primeira - o inverso do
+# pretendido. Medido: 10 linhas a menos em vez de 1, e a assercao de precondicao pegou.
+awk -F'\t' '!($1=="adapter" && !seen++)' install/manifest.lock > "$MENOS"
+chk "o manifesto alternativo perdeu exatamente 1 adaptador" \
+    "$(( $(wc -l < install/manifest.lock) - $(wc -l < "$MENOS") ))" "1"
+
+FK17="$T/raiz17"; mkdir -p "$FK17"
+rc=$(MANAGED_PREFIX="$FK17" bash "$AM" >/dev/null 2>&1; echo $?)
+chk "  deploy inicial instala arvore e politica" "$rc" 0
+ANTES17="$(estado_ativo "$FK17")"
+chk "  o estado ativo tem as DUAS metades (senao o oraculo e cego)" \
+    "$(case "$ANTES17" in *AUSENTE*) echo nao;; *) echo sim;; esac)" "sim"
+
+# ANTIVACUIDADE: sem o failpoint, este mesmo comando SUCEDE e muda o estado. Se nao mudasse,
+# os casos abaixo passariam mesmo com o rollback quebrado.
+FK17V="$T/raiz17v"; mkdir -p "$FK17V"
+MANAGED_PREFIX="$FK17V" bash "$AM" >/dev/null 2>&1
+MANAGED_PREFIX="$FK17V" MANAGED_MANIFEST="$MENOS" bash "$AM" --enforce >/dev/null 2>&1
+chk "  e o segundo deploy MUDARIA o estado se completasse (nao vacuo)" \
+    "$([ "$(estado_ativo "$FK17V")" != "$ANTES17" ] && echo sim || echo nao)" "sim"
+
+for FP in publicar-opt instalar-politica; do
+  rc=$(MANAGED_PREFIX="$FK17" MANAGED_MANIFEST="$MENOS" MANAGED_FAILPOINT="$FP" \
+       bash "$AM" --enforce >/dev/null 2>&1; echo $?)
+  chk "  failpoint '$FP': o deploy REPROVA" "$rc" 1
+  chk "    e o estado ativo INTEIRO volta ao anterior" "$(estado_ativo "$FK17")" "$ANTES17"
+done
+
+echo "== MG18. sucesso so e reportado quando arvore E politica convergem =="
+# O contrapositivo de MG17: sem este caso, um instalador que reprovasse SEMPRE passaria em MG17.
+rc=$(MANAGED_PREFIX="$FK17" MANAGED_MANIFEST="$MENOS" bash "$AM" --enforce >/dev/null 2>&1; echo $?)
+chk "sem failpoint, o mesmo deploy SUCEDE" "$rc" 0
+DEPOIS18="$(estado_ativo "$FK17")"
+chk "  e o estado ativo mudou (as duas metades foram commitadas)" \
+    "$([ "$DEPOIS18" != "$ANTES17" ] && echo sim || echo nao)" "sim"
+chk "  a politica no disco reflete o modo pedido (--enforce)" \
+    "$(jq -r '.allowManagedHooksOnly' "$FK17/etc/claude-code/managed-settings.json" 2>/dev/null)" "true"
+chk "  e nao restou material de rollback" \
+    "$(find "$FK17/etc/claude-code" "$FK17/opt" -maxdepth 1 \
+       \( -name '.managed-settings.json.*' -o -name 'evidence-gate.anterior.*' \
+          -o -name 'evidence-gate.stage.*' \) 2>/dev/null | wc -l | tr -d ' ')" "0"
+
 echo
 echo "================ PASS=$P  FAIL=$F ================"
-EXPECTED=53
+EXPECTED=65
 if [ "$P" -ne "$EXPECTED" ]; then
   echo "CONTAGEM INESPERADA: PASS=$P, esperado $EXPECTED. Caso removido ou nao executado."
   exit 1
