@@ -1,9 +1,8 @@
-# Handoff - fechamento da Fase 1 (M2 -> M3)
+# Handoff - apos a sessao de fechamento da Fase 1
 
-- Origem: sessao de 2026-08-03, `claude-mecanismo` -> `evidence-gate`
-- Ultimo commit desta sessao: `819b952`
-- Estado: **M2 - mecanismo experimental verificado, reproduzido em ambiente independente**
-- Alvo da proxima sessao: **M3 - enforcement operacional e raiz de confianca**
+- Origem: sessao de 2026-08-04 (a anterior, de 2026-08-03, produziu a versao antecessora deste arquivo)
+- Estado: **M3 parcial** - enforcement e runtime atingidos; managed policy construida e NAO ativada; sandbox nao iniciado
+- Referencia canonica do estado: `docs/status.generated.md` (gerado por execucao) e `docs/adr/0023`
 
 ---
 
@@ -14,34 +13,36 @@
 > Um artefato so atravessa a fronteira externa quando uma politica **fora da autoridade do ator**
 > confirma evidencia valida, nao obsoleta e vinculada ao mesmo snapshot.
 
-**O que ele NAO e, hoje:** uma fronteira de confianca. A politica ainda e gravavel pelo ator
-governado; a CI executa mas nao impede merge. Isso esta declarado em `README.md`, no ADR 0022 e
-em `docs/status.generated.md`. Nao o descreva como garantia.
+**O que mudou:** a fronteira externa passou a IMPOR, e isso foi medido, nao configurado. Push
+direto para `main` a partir do token com `admin: true` e recusado com `GH013`. O que ainda NAO
+existe e a raiz de confianca LOCAL: `~/.claude` continua gravavel pelo ator.
 
-**Onde esta a verdade:** `docs/status.generated.md`, gerado por `scripts/status.sh` a partir de
-execucao real. Nunca digite contagens a mao em lugar nenhum - o README ja divergiu uma vez, e a
-correcao foi parar de duplicar, nao corrigir o numero.
+**Onde esta a verdade:** `docs/status.generated.md`. Nunca digite contagens a mao.
+
+**As afirmacoes verificaveis** estao em `evidence/claims/*.yaml`, e o validador RESOLVE cada
+referencia contra a suite real - citar regressao ou mutante inexistente reprova.
 
 ---
 
 ## 2. O contrato de teste deste repositorio
 
-Cinco defeitos desta sessao tiveram a mesma forma, e a defesa contra ela e a regra mais
-importante do projeto:
+Sete defeitos ja tiveram esta forma:
 
 ```
 precondicao falha -> operacao nao executa -> pos-condicao vacuamente verdadeira -> VERDE
 ```
 
-| Onde ocorreu | O que nao executou | Defesa construida |
-|---|---|---|
-| `--dry-run` | o `cd` falhou; nada rodou | exit code da operacao vira assercao |
-| locale | `LC_ALL=pt_BR` sem o locale instalado | discriminador comportamental |
-| locale, 2a tentativa | `locale` ecoa nome de locale inexistente | idem |
-| matcher do `apt` | `apt-get -o ... install` nao casava | contagem invariante (`EXPECTED`) |
-| `packaging` em S5 | SKIP reduzia o esperado junto | pre-requisito de oraculo obrigatorio |
+| Onde ocorreu | O que nao executou |
+|---|---|
+| `--dry-run` | o `cd` falhou; nada rodou |
+| locale | `LC_ALL=pt_BR` sem o locale instalado |
+| locale, 2a tentativa | `locale` ecoa nome de locale inexistente |
+| matcher do `apt` | `apt-get -o ... install` nao casava |
+| `packaging` em S5 | SKIP reduzia o esperado junto |
+| **R4** | payload com `transcript_path`/`subagent_type`, campos que o hook NAO LE |
+| **L3, PB3** (nesta sessao) | fixture YAML invalido reprovava no parser; nome hostil com `/` nem era criado |
 
-Logo, **um teste novo neste repositorio nao vale sem**:
+Um teste novo nao vale sem:
 
 ```
 precondicoes satisfeitas
@@ -51,202 +52,166 @@ precondicoes satisfeitas
   E Q(estado_final)
 ```
 
-E a distincao que decide como tratar um pre-requisito ausente:
+**Regra que emergiu desta sessao:** todo caso POSITIVO precisa de um NEGATIVO correspondente. A
+ancora de evidencia do contrato de subagente teve so positivos por versoes inteiras, e por isso
+seu poder de decisao nunca foi medido. Positivo sozinho mede PRESENCA, nao decisao.
+
+E a distincao que decide como tratar pre-requisito ausente:
 
 | Tipo | Ausente significa | Tratamento |
 |---|---|---|
-| **dependencia do ORACULO** (ex.: `packaging`) | o teste **nao foi realizado** | `exit 2`, NOT_VERIFIED |
-| **variacao de AMBIENTE** (ex.: locales instalados) | uma variante nao pode ser exercitada | `SKIP` + assercao-guarda exigindo ao menos uma |
+| **dependencia do ORACULO** (`packaging`, `pyyaml`, `flock`) | o teste **nao foi realizado** | `exit 2`, NOT_VERIFIED |
+| **variacao de AMBIENTE** (locales instalados) | uma variante nao pode ser exercitada | `SKIP` + assercao-guarda exigindo ao menos uma |
 
 ---
 
 ## 3. Rigor exigido - nao negociavel
 
-1. **Reproduza antes de corrigir.** Todo defeito comeca por um comando que o exibe, com saida
-   colada. Sem repro, nao ha o que corrigir - ha o que supor.
-2. **Corrija a CLASSE, nao a instancia.** `pymupdf` sem versao virou `tests/unit/supply-chain.sh`,
-   nao um pin. Drift de README virou `scripts/status.sh`, nao um numero editado.
-3. **Todo teste novo passa por mutacao.** Remova a garantia, exija que a suite reprove, e que
-   reprove **no caso-alvo correspondente**. Mutante nao aplicado e FALHA, nao sobrevivencia.
-4. **Contagem e invariante.** `EXPECTED` fixo; caso que some reprova. Nunca reduza o esperado
-   para acomodar um SKIP.
-5. **Fonte primaria para todo fato externo.** Quatro erros desta sessao foram afirmacoes sem
-   conferir a fonte (LSP, SkillLearnBench, `dotnet format`, pinagem). O adaptador .NET declarava
-   `executes_repository_code: false` contra a advertencia explicita da Microsoft.
-6. **Estado sem execucao colada e NAO VERIFICADO.** Nao existe "deve funcionar".
-7. **Sem emoji, sem hype, em qualquer artefato.** `control/hooks/artifact-discipline.sh` barra.
+1. **Reproduza antes de corrigir**, com saida colada.
+2. **Corrija a CLASSE, nao a instancia.** A allowlist de comandos do oraculo da ancora nao foi
+   "acrescida de `wc`": foi trocada por FORMA de comando. Enumerar comandos nao e conjunto
+   decidivel.
+3. **Todo teste novo passa por mutacao**, e o kill precisa ser atribuivel ao caso-alvo. Caso com
+   DUAS ancoras nao serve de alvo de mutante - nao isola qual alternativa o sustenta.
+4. **Contagem e invariante.** `EXPECTED` fixo. Nesta sessao a invariante pegou tres testes meus
+   errados antes que eu os publicasse.
+5. **Fonte primaria para todo fato externo.** A doc primaria corrigiu o plano de P2 do handoff
+   anterior (plugin NAO serve de raiz de confianca).
+6. **Estado sem execucao colada e NAO VERIFICADO.**
+7. **Sem emoji, sem hype, em qualquer artefato.**
+8. **Uma suite por vez.** `tests/lib/lock.sh` sai 3 em corrida; isso e o lock, nao defeito.
 
 ---
 
-## 4. Como rodar (comece por aqui)
+## 4. Como rodar
 
 ```bash
 cd ~/evidence-gate
 
-# 1. estado atual, por execucao real
-bash scripts/status.sh && cat docs/status.generated.md
+bash scripts/status.sh && cat docs/status.generated.md   # estado por execucao real
+bash install/verify.sh                                    # conformidade repo <-> ~/.claude
+bash install/apply-managed.sh --verify                    # conformidade do escopo managed
 
-# 2. conformidade repo <-> ~/.claude
-bash install/verify.sh
-
-# 3. suites (todas devem sair 0)
-bash tests/unit/supply-chain.sh
-bash tests/unit/reprodutibilidade.sh
-bash tests/unit/document-tools.sh
-bash tests/unit/regressao-gate.sh
-bash tests/unit/run.sh
+# suites - UMA POR VEZ (o lock reprova corrida com exit 3)
+for s in supply-chain document-tools reprodutibilidade managed propriedades \
+         claims concorrencia regressao-gate run; do bash tests/unit/$s.sh || break; done
 bash tests/mutation/run.sh
+bash tests/mutation/contrato.sh
 bash tests/mutation/install.sh
 
-# 4. aplicar mudancas em ~/.claude (sempre com backup automatico)
-bash install/apply.sh --dry-run    # plano, sem escrever
-bash install/apply.sh              # aplica e roda verify
-
-# 5. gate externo
 gh run list --limit 3
 ```
 
-Backup desta sessao, se precisar reverter:
-`~/.claude/backups/pre-evidence-gate-20260803-164632`
+O fluxo de commit mudou: **`main` esta sob ruleset**. Push direto e recusado. Trabalhe em branch
+e abra PR; o check `verify` precisa passar sobre o SHA.
 
 ---
 
-## 5. O que falta, em ordem de execucao
+## 5. O que falta, em ordem
 
-### P0 - fechavel na proxima sessao
+### P2 - RAIZ DE CONFIANCA: construida, NAO ativada. E o primeiro item.
 
-**P0.1 Confirmar o runtime efetivo.** ESTE ITEM EXIGE O USUARIO: `/hooks`, `/status` e
-`--debug` sao comandos do CLI, nao executaveis por Bash. Peca a saida e registre.
-Objetivo: preencher `desired / installed / loaded / executed / governed_by`.
-**Por que importa:** o ADR 0022 declara que uma precedencia diferente entre hooks de usuario e
-plugins **refutaria parte do diagnostico**. Enquanto nao for observado, o diagnostico central
-tem uma premissa aberta.
+`install/apply-managed.sh` existe, tem 23 assercoes em `tests/unit/managed.sh` contra prefixo
+de ensaio, e cobre 30 componentes (14 hooks + 11 adaptadores + 5 doctools - nao bastam os
+hooks: o gate le a tabela de adaptadores, e tabela gravavel desliga o gate sem tocar em hook).
 
-**P0.2 Claim ledger.** `evidence/claims/*.yaml` + validador de schema + caso na CI.
-Schema minimo (o `counterexamples` e a parte mais valiosa - registro de refutacao):
+Falta a ativacao, que exige `sudo` com senha:
 
-```yaml
-claim_id: C-001
-claim: "Falha em cache nunca e reutilizada como sucesso."
-type: empirical-invariant
-scope:
-  commit: 819b952
-  platforms: [local-linux, github-ubuntu-24.04]
-evidence:
-  regression: [G1]
-  mutants: [M1]
-  ci_run: "<url>"
-warrant: "o mutante que remove a distincao fail/pass e morto por G1"
-counterexamples:
-  - commit: <o commit onde falhava>
-    result: refuted
-limitations: ["nao testado em macOS", "nao e prova universal"]
-status: supported-in-tested-domain
+```bash
+sudo bash install/apply-managed.sh              # deploy, SEM ativar
+sudo bash install/apply-managed.sh --verify     # 30 componentes, 0 divergentes, 0 gravaveis
+# medir aqui: cada hook deve rodar DUAS vezes (managed + usuario). Se nao dobrar, PARE.
+sudo bash install/apply-managed.sh --enforce    # so depois de a medicao dobrar
+# medir de novo: deve voltar a UMA vez, com os caminhos vindo de /opt.
+sudo bash install/apply-managed.sh --revert     # desfaz por completo
 ```
 
-Regra: o ledger **referencia** evidencia existente, nao a duplica. E precisa de um teste que
-reprove se uma claim citar um `regression:` ou `mutant:` que nao existe.
+**ARMADILHA, e o instalador ja a trata:** `allowManagedHooksOnly` bloqueia hook de usuario E de
+plugin. Ativa-lo com deploy incompleto derruba o mecanismo inteiro. Por isso o portao de
+conformidade PRECEDE toda escrita de politica (caso MG6). Nao remova essa ordem.
 
-**P0.3 Base de comparacao sem upstream.** Hoje, commit local sem `@{u}` some do conjunto de
-mudancas: `git diff HEAD` vazio + untracked vazio + sem upstream = gate inerte. Definir a base
-(merge-base com a branch default, commit inicial da sessao, ou ultimo ledger) e adicionar caso
-de regressao.
+**Como medir** (foi assim que a precedencia de hooks foi determinada):
 
-**P0.4 Property-based testing.** Alvos: substituicao de placeholders no `doctool.sh`, filenames
-hostis, normalizacao de paths, parser do workflow, identidade do manifesto. Mesma familia
-epistemica dos metamorficos que ja pagaram, sem artefato paralelo para manter.
+```bash
+claude -p "responda exatamente: OK" --model claude-haiku-4-5-20251001 --tools "" \
+  --no-session-persistence --output-format stream-json --include-hook-events --verbose \
+  | jq -r 'select(.subtype=="hook_started") | .hook_event' | sort | uniq -c
+```
 
-### P1 - exige acao do usuario no GitHub
+### P3 - SANDBOX. E a lacuna aberta mais relevante.
 
-**Required status check + ruleset sem bypass para o ator.** Sem isso `CI = feedback`; com isso
-`CI + ruleset = external gate`. Confirmar que o check e exigido sobre o **SHA exato** e que o
-ator governado nao pode contornar. Depois disso, e so depois, o README pode dizer "enforcement".
+`pandoc`, `libreoffice` e `pdftotext` processam entrada nao confiavel com a autoridade do
+usuario. D5 impoe timeout, teto de bytes e tmpdir - isso e contencao de RECURSO, nao
+isolamento. **Isto deve travar a expansao para OCR e novos formatos ate haver isolamento.**
+Caminhos: `bwrap`/`nsjail`, ou container por digest.
 
-### P2 - raiz de confianca (exige sudo)
+### P3b - hermeticidade
 
-`managed settings` root-owned + `allowManagedHooksOnly` + launcher nao gravavel.
-**ARMADILHA:** `allowManagedHooksOnly` desliga de uma vez TODO hook de escopo de usuario. Os 14
-hooks precisam estar em plugin force-enabled ou managed ANTES de ativar, senao o mecanismo
-inteiro cai. Migrar, verificar, so entao ativar.
-
-### P3 - hardening
-
-- **Sandbox**: parsers de documento (`pandoc`, `libreoffice`, `pdftotext`) rodam hoje com a
-  autoridade do usuario sobre entrada nao-confiavel. D5 impoe timeout, teto de bytes e tmpdir -
-  isso e contencao de recurso, **nao isolamento**.
-- **Hermeticidade**: `ubuntu-24.04` fixa familia, nao digest. Container por digest + SBOM.
-- **Cache de extracoes** no `doctool.sh` (o digest ja esta no pack; falta a camada e a invalidacao).
+`ubuntu-24.04` fixa familia, nao digest. Container por digest + SBOM.
 
 ### P4 - eficacia (NAO cabe numa sessao)
 
-Corpus congelado, primeiro contraste `baseline vs harness minimo`, metricas `UAR/URR/AR/VY`,
-piloto para estimar `p01`/`p10`, power analysis, contraste pre-registrado, modelo logistico
-hierarquico. **Sem isso nenhuma afirmacao sobre melhoria de engenharia e dizivel.**
+Corpus congelado, contraste `baseline vs harness`, `UAR/URR/AR/VY`, piloto para `p01`/`p10`,
+power analysis, pre-registro, modelo logistico hierarquico. Sem isso nenhuma afirmacao sobre
+melhoria de engenharia e dizivel.
 
 ### P5 - auditoria autoralmente independente
 
-A CI e observador **ambiental**, nao autoral: executa os testes escritos pelo mesmo processo,
-contra os mesmos oraculos. Auditoria real precisa de mutantes nao revelados e fixtures hostis
-de terceiro. Este e o gargalo que nenhuma sessao minha resolve.
+A CI e observador AMBIENTAL, nao autoral: executa testes escritos pelo mesmo processo, contra
+os mesmos oraculos. Precisa de mutantes nao revelados e fixtures hostis de terceiro.
 
-### Nao priorizar agora
+### Nao priorizar
 
-**Metodos formais (TLA+/Alloy).** Dos ~11 defeitos desta sessao, zero eram violacao de
-invariante da maquina de estados; todos eram precondicao nao satisfeita, dependencia nao
-declarada, matcher cego ou classificacao errada. Especificacao formal cria um segundo artefato
-que pode divergir do primeiro - o defeito `repo != runtime` transposto. Gatilho legitimo para
-reavaliar: concorrencia no ledger, corrida entre snapshot e verificacao, composicao de
-autoridades, ou estado inalcancavel aparecendo em producao.
+**Metodos formais.** Dos ~19 defeitos ja catalogados, zero foram violacao de invariante de
+maquina de estados. Gatilho legitimo para reavaliar: concorrencia no ledger, corrida entre
+snapshot e verificacao, composicao de autoridades.
 
-**Grafos.** Estagio exploratorio (skill + hook + agente, sem schema, digest, freshness ou
-benchmark). Nao priorizar sobre claim ledger, corpus ou auditoria. Quando for a hora: LSP antes
-de indice proprio - o Claude Code tem caminho oficial via `.lsp.json` em plugin, o que e
-configurar e nao construir.
+**Grafos.** Estagio exploratorio. LSP antes de indice proprio.
 
 ---
 
 ## 6. Armadilhas que ja custaram tempo
 
-1. **`$(...)` em substituicao de comando cria subshell** - `R=$(funcao)` perde o `cd`. Os casos
-   rodavam no diretorio do caso anterior e davam PASS/FAIL por motivo errado.
-2. **`head`/`tail` num pipe destroem o exit code.** `cmd | head` devolve o status do `head`.
-   Aconteceu tres vezes; duas quase produziram conclusao errada.
-3. **`CLAUDE_ADAPTERS_DIR` vive no `settings.json`** e entra no ambiente das ferramentas: a
-   suite chegou a exercitar a copia instalada em `~/.claude` em vez do repositorio.
-4. **`pandoc -o x.pdf` exige engine LaTeX** - ausente na CI. Fixtures de PDF por PyMuPDF.
-5. **`locale` ecoa o nome pedido mesmo para locale inexistente.** Verificar nome nao verifica
-   efeito; use discriminador comportamental.
-6. **`sed 'y/.../.../'` quebra sob `LC_ALL=C`** com multi-byte. Substituicao literal por byte.
-7. **As suites NAO sao reentrantes.** `G10` executa `install/apply.sh`, que escreve
-   `install/manifest.lock` e `~/.claude`. Duas execucoes concorrentes se corrompem: medido, uma
-   deu `29/exit 0` e a simultanea `27/exit 1`. Isoladas, tres execucoes seguidas dao 29/29.
-   Na CI e sequencial, entao nao aparece la. **Rode uma suite por vez**; se um comando ficou em
-   background, espere. Corrigir de verdade exigiria lock no diretorio de trabalho - escopo aberto.
-8. **`$TMPDIR` pode estar vazio no zsh** - `"$TMPDIR/x"` vira `/x` e falha com permission denied.
+1. **`$(...)` cria subshell** - `R=$(funcao)` perde o `cd`.
+2. **`head`/`tail` num pipe destroem o exit code.** Aconteceu de novo nesta sessao.
+3. **`CLAUDE_ADAPTERS_DIR` vive no `settings.json`** e entra no ambiente das ferramentas.
+4. **`pandoc -o x.pdf` exige engine LaTeX** - ausente na CI.
+5. **`locale` ecoa o nome pedido** mesmo para locale inexistente.
+6. **`sed 'y/.../.../'` quebra sob `LC_ALL=C`** com multi-byte.
+7. **As suites nao sao reentrantes** - agora ha lock (`exit 3`), mas continue rodando uma por vez.
+8. **`$TMPDIR` pode estar vazio no zsh** - use `${TMPDIR:-/tmp}`, nunca `${TMPDIR-/tmp}`.
+9. **NOVO: crase de markdown quebra regex.** ``exit code `0` `` tem `0x60` entre `code ` e `0`.
+   Qualquer padrao que atravesse "espaco opcional" falha ali. Foi um falso bloqueio em producao.
+10. **NOVO: nome de arquivo nao contem `/`.** Fixture hostil com caminho absoluto embutido nem
+    chega a ser criada, e a assercao passa sobre arquivos inexistentes.
+11. **NOVO: `git cat-file -e <valor>`** - valor iniciado por `-` e lido como opcao. Valide a
+    forma antes, `--` nao resolve em `cat-file`.
+12. **NOVO: backup so do que nao e seu.** Um instalador que faz backup do arquivo que ele mesmo
+    escreveu produz um `--revert` que RESTAURA a coisa que deveria remover.
 
 ---
 
-## 7. Criterio de pronto desta proxima sessao
+## 7. Criterio de pronto
 
 Nao declare a sessao concluida sem, colado na resposta:
 
 - [ ] `bash scripts/status.sh --check` -> exit 0
 - [ ] `bash install/verify.sh` -> exit 0, sem orfaos
-- [ ] as 5 suites unitarias e os 2 runners de mutacao -> exit 0
-- [ ] CI verde no commit final, com o SHA e a URL do run
+- [ ] as 9 suites unitarias e os 3 runners de mutacao -> exit 0
+- [ ] `python3 evidence/validate-claims.py` -> exit 0
+- [ ] CI verde no commit final, com SHA e URL, e o PR mergeado pelo ruleset
 - [ ] `docs/status.generated.md` regenerado e committado
-- [ ] ADR atualizado com o que foi feito **e com o que nao foi**
-- [ ] cada item de P0 marcado: fechado / nao fechado / bloqueado por acao do usuario
-
-E o portao final: **delegue ao agente `refutador`** com o `git diff` cru da sessao. Contexto
-separado, instrucao para tentar refutar. Esta sessao nao o acionou por restricao do ambiente, e
-essa lacuna esta declarada - se a proxima puder, deve.
+- [ ] ADR com o que foi feito **e com o que nao foi**
+- [ ] claims novas para garantias novas, com `limitations` preenchido
+- [ ] portao final no agente `refutador`, sobre o diff cru
 
 ## 8. Como NAO fechar
 
-"Fechar TUDO" nao e alcancavel numa sessao. P4 (corpus, inferencia) leva semanas; P5 exige um
-terceiro. Prometer o fechamento total repetiria exatamente a classe de defeito que este projeto
-existe para impedir: **declarar pronto o que nao foi executado**.
+"Fechar TUDO" nao e alcancavel numa sessao, e prometer isso repete a classe de defeito que este
+projeto existe para impedir. P4 leva semanas; P5 exige um terceiro; P3 (sandbox) e trabalho de
+engenharia real, nao configuracao.
 
-O fechavel numa sessao limpa e: **P0 inteiro, P1 e P2 na parte que o usuario autorizar e
-executar, P3 parcial.** O resto deve sair da sessao com escopo escrito e limites declarados.
+O padrao que atravessa as tres ultimas sessoes: **os defeitos aparecem quando MUDA O QUE
+EXECUTA** - outro locale, duas execucoes simultaneas, um plugin a mais, o binario de verdade,
+variantes de formatacao, a garantia removida. Ler o mesmo codigo com mais atencao encontrou
+zero deles.
