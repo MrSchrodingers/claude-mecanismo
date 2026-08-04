@@ -177,7 +177,13 @@ echo "== L12. a evidencia e resolvida contra o SNAPSHOT declarado, nao contra o 
 # validador imprimia "toda evidencia citada existe" - verdadeiro sobre o worktree e FALSO sobre
 # o escopo que cada claim declara. Alegacao cujo lastro nao existe no snapshot que ela nomeia
 # nao esta ancorada: esta datada errado, que e a forma silenciosa de nao estar ancorada.
-ANTIGO="$(git -C "$REPO" rev-list --max-parents=1 -n1 HEAD~6 2>/dev/null || git -C "$REPO" rev-parse HEAD~6 2>/dev/null || echo '')"
+# A ANCORA E A RAIZ DO REPOSITORIO, e nao uma DISTANCIA em commits.
+# A primeira versao deste caso usava HEAD~6 e a CI o reprovou: localmente HEAD~6 caia antes de
+# a suite de concorrencia existir; com UM commit a mais, passou a cair depois, a claim resolveu,
+# e o caso media zero. Um teste ancorado em distancia de historico mede a profundidade do
+# historico, nao a propriedade - e o resultado muda sozinho a cada commit.
+# A raiz e estavel por construcao: nenhuma evidencia desta sessao existe la, hoje ou nunca.
+ANTIGO="$(git -C "$REPO" rev-list --max-parents=0 HEAD 2>/dev/null | tail -1)"
 if [ -z "$ANTIGO" ]; then
   echo "  SKIP  historico curto demais para exercitar a resolucao por snapshot"
 else
@@ -185,6 +191,10 @@ else
   # a MESMA claim, mudando SO o snapshot: se o resultado nao mudar, a resolucao ignora o campo.
   cp "$REPO/evidence/claims/C-011.yaml" "$D/C-011.yaml"
   chk "no snapshot corrente a claim resolve" "$(val "$REPO/evidence/claims")" 0
+  # PRECONDICAO EXPLICITA: sem ela, se a evidencia por acaso ja existisse no snapshot antigo,
+  # o caso passaria a medir nada e nao haveria sinal. Foi assim que a versao anterior quebrou.
+  chk "  a evidencia citada NAO existe no snapshot antigo (senao o caso e vacuo)" \
+      "$(git -C "$REPO" show "$ANTIGO:tests/unit/concorrencia.sh" 2>/dev/null | grep -c '^echo .== C1' | tr -d ' ')" "0"
   python3 - "$D/C-011.yaml" "$ANTIGO" <<'PY3'
 import sys, yaml
 p, sha = sys.argv[1], sys.argv[2]
@@ -200,7 +210,7 @@ fi
 
 echo
 echo "================ PASS=$P  FAIL=$F ================"
-EXPECTED=20
+EXPECTED=21
 if [ "$P" -ne "$EXPECTED" ]; then
   echo "CONTAGEM INESPERADA: PASS=$P, esperado $EXPECTED. Caso removido ou nao executado."
   exit 1
