@@ -157,6 +157,46 @@ R=$(run "$(jq -nc --arg m "$ACC" '{hook_event_name:"SubagentStop",agent_type:"re
 chk "  aceita EVIDENCIA acentuada (PT-BR reprovava 25%)" "$R" 0
 R=$(run "$(jq -nc --arg m "tudo certo, pode seguir" '{hook_event_name:"SubagentStop",agent_type:"refutador",last_assistant_message:$m}')" "$S")
 chk "  barra retorno sem evidencia" "$R" 2
+# --- ORACULO DA ANCORA: os quatro casos abaixo nasceram de um FALSO BLOQUEIO em producao,
+# medido em 2026-08-04 sobre payload real da sonda (SubagentStop de `investigador`).
+# O caso NEGATIVO e o mais importante: ate aqui a suite so tinha positivos para a ancora, e
+# "barra retorno sem evidencia" reprovava ja no RESULTADO - o poder discriminante da ancora
+# nunca fora exercitado. Positivo sem negativo correspondente nao mede oraculo, mede presenca.
+REAL='RESULTADO: o arquivo tem 71 linhas.
+EVIDENCIA:
+- Comando: `wc -l /home/ti/evidence-gate/install/verify.sh` -> saida `71 /home/ti/evidence-gate/install/verify.sh`, exit code `0`.
+RISCOS / PENDENCIAS: nenhum.
+PROPAGACAO: nenhuma.'
+R=$(run "$(jq -nc --arg m "$REAL" '{hook_event_name:"SubagentStop",agent_type:"refutador",last_assistant_message:$m}')" "$S")
+chk "  aceita payload REAL de producao (regressao do falso bloqueio)" "$R" 0
+# O payload REAL acima tem DUAS ancoras (`wc -l` e `exit code`), entao nao isola qual
+# alternativa o sustenta - serve de regressao, nao de alvo de mutacao. Os casos abaixo tem
+# ancora UNICA de proposito: sem isso o kill do mutante nao e atribuivel, e mutante morto por
+# acidente nao prova que o caso protege aquela garantia (docs/adr/0020, regra de metodo 2).
+CRASE='RESULTADO: a suite passou.
+EVIDENCIA: a execucao terminou com exit code `0`.
+RISCOS: nenhum.
+PROPAGACAO: nenhuma.'
+R=$(run "$(jq -nc --arg m "$CRASE" '{hook_event_name:"SubagentStop",agent_type:"refutador",last_assistant_message:$m}')" "$S")
+chk "  aceita 'exit code' com crase de markdown (ancora unica)" "$R" 0
+CMD='RESULTADO: medido.
+EVIDENCIA: rodei `xxd -l 16 arquivo.bin` e a saida bate com o esperado.
+RISCOS: nenhum.
+PROPAGACAO: nenhuma.'
+R=$(run "$(jq -nc --arg m "$CMD" '{hook_event_name:"SubagentStop",agent_type:"refutador",last_assistant_message:$m}')" "$S")
+chk "  aceita comando FORA da antiga allowlist (xxd)" "$R" 0
+NV='RESULTADO: nao consegui executar a suite.
+EVIDENCIA: nao verificado - pytest ausente neste ambiente.
+RISCOS: a alegacao segue sem lastro.
+PROPAGACAO: nenhuma.'
+R=$(run "$(jq -nc --arg m "$NV" '{hook_event_name:"SubagentStop",agent_type:"refutador",last_assistant_message:$m}')" "$S")
+chk "  aceita a saida honesta que a propria mensagem promete (nao verificado)" "$R" 0
+VAZ='RESULTADO: revisei a implementacao e esta correta.
+EVIDENCIA: li o codigo com atencao e nao encontrei problema.
+RISCOS: nenhum.
+PROPAGACAO: nenhuma.'
+R=$(run "$(jq -nc --arg m "$VAZ" '{hook_event_name:"SubagentStop",agent_type:"refutador",last_assistant_message:$m}')" "$S")
+chk "  BARRA blocos completos SEM ancora (discriminador da ancora)" "$R" 2
 O="$EXEC/output-budget.sh"
 # acima do limite de 12.000 B, senao o hook sai 0 sem emitir e o teste reprova um hook correto
 BIG=$(python3 -c "print('\n'.join(f'linha de saida numero {i} com texto suficiente' for i in range(500)))")

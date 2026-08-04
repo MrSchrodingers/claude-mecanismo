@@ -36,6 +36,8 @@ TMP="$(mktemp)"
   printf '\n## Mutacao\n\n| Alvo | Mutantes | Exit |\n|---|---:|---:|\n'
   mg="$(grep -c '^mutante M' tests/mutation/run.sh)"; bash tests/mutation/run.sh >/dev/null 2>&1
   printf '| gate | %s | %s |\n' "$mg" "$?"
+  mc="$(grep -c '^mutante M' tests/mutation/contrato.sh)"; bash tests/mutation/contrato.sh >/dev/null 2>&1
+  printf '| contrato de subagente | %s | %s |\n' "$mc" "$?"
   bash tests/mutation/install.sh >/dev/null 2>&1
   printf '| instalador | 1 | %s |\n' "$?"
   printf '\n## Componentes\n\n| Tipo | Qtd |\n|---|---:|\n'

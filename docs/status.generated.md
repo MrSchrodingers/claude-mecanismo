@@ -11,13 +11,14 @@ O README referencia este arquivo em vez de duplicar numeros.
 | `tests/unit/document-tools.sh` | 21 | 0 |
 | `tests/unit/supply-chain.sh` | 6 | 0 |
 | `tests/unit/reprodutibilidade.sh` | variavel (ambiente) | 0 |
-| `tests/unit/run.sh` | 40 | 0 |
+| `tests/unit/run.sh` | 45 | 0 |
 
 ## Mutacao
 
 | Alvo | Mutantes | Exit |
 |---|---:|---:|
 | gate | 9 | 0 |
+| contrato de subagente | 5 | 0 |
 | instalador | 1 | 0 |
 
 ## Componentes

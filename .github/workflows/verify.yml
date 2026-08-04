@@ -91,6 +91,8 @@ jobs:
         run: bash tests/unit/regressao-gate.sh
       - name: validacao por mutacao (gate)
         run: bash tests/mutation/run.sh
+      - name: validacao por mutacao (contrato de subagente)
+        run: bash tests/mutation/contrato.sh
       - name: validacao por mutacao (instalador)
         run: bash tests/mutation/install.sh
       - name: suite legada
