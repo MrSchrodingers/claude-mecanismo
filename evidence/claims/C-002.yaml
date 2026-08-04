@@ -1,0 +1,24 @@
+# Ledger de alegacoes - ver evidence/validate-claims.py para o contrato.
+# REFERENCIA evidencia existente; nunca a duplica.
+claim_id: C-002
+claim: O aviso do gate chega ao modelo por um canal que o runtime de fato entrega, e nao por stderr com
+  exit 0.
+type: empirical-invariant
+scope:
+  commit: '1319931'
+  platforms:
+  - local-linux
+  - github-ubuntu-24.04
+evidence:
+  regression:
+  - G2
+  mutants:
+  - M2
+  ci_run: https://github.com/MrSchrodingers/evidence-gate/actions/workflows/verify.yml
+warrant: G2 exige que o payload traga hookSpecificOutput.additionalContext e que declare NOT_VERIFIED.
+  M2 troca o canal por stderr+exit 0 e G2 reprova. O ADR 0021 registra que dois hooks foram decoracao
+  por versoes inteiras exatamente por esse engano.
+limitations:
+- a garantia e sobre o CANAL, nao sobre o modelo agir a partir dele
+- medido em claude-code 2.1.220; outro runtime pode ter outro contrato de canal
+status: supported-in-tested-domain

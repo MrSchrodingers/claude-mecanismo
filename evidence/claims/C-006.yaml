@@ -1,0 +1,28 @@
+# Ledger de alegacoes - ver evidence/validate-claims.py para o contrato.
+# REFERENCIA evidencia existente; nunca a duplica.
+claim_id: C-006
+claim: Adaptador que declara executar codigo do repositorio nunca roda em auto-deteccao.
+type: security-property
+scope:
+  commit: '1319931'
+  platforms:
+  - local-linux
+  - github-ubuntu-24.04
+evidence:
+  regression:
+  - G7
+  mutants:
+  - M7
+  ci_run: https://github.com/MrSchrodingers/evidence-gate/actions/workflows/verify.yml
+warrant: G7 monta um repo .NET e exige que o resultado seja LACUNA DE COBERTURA cujo motivo seja EXECUTAR
+  codigo do repo - e nao 'binario ausente', que seria a mesma saida por outra causa. Esta assercao especifica
+  foi acrescentada porque M7 sobreviveu a primeira versao do caso.
+limitations:
+- a regra confia no valor DECLARADO em declared_effects. Ela impede execucao de adaptador CORRETAMENTE
+  classificado; NAO detecta classificacao errada - e uma declaracao falsa foi justamente o defeito que
+  a originou (adaptador .NET, ADR 0022 adendo 1)
+status: supported-in-tested-domain
+counterexamples:
+- commit: pre-adendo-1
+  result: refuted
+  note: 'dotnet.json declarava executes_repository_code: false contra a advertencia explicita da Microsoft'

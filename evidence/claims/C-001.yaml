@@ -1,0 +1,27 @@
+# Ledger de alegacoes - ver evidence/validate-claims.py para o contrato.
+# REFERENCIA evidencia existente; nunca a duplica.
+claim_id: C-001
+claim: Um veredito de FALHA em cache nunca e reutilizado como sucesso numa parada posterior.
+type: empirical-invariant
+scope:
+  commit: '1319931'
+  platforms:
+  - local-linux
+  - github-ubuntu-24.04
+evidence:
+  regression:
+  - G1
+  mutants:
+  - M1
+  ci_run: https://github.com/MrSchrodingers/evidence-gate/actions/workflows/verify.yml
+warrant: G1 executa o hook duas vezes sobre o MESMO snapshot quebrado e exige exit 2 nas duas. M1 remove
+  a exigencia de que so o veredito 'pass' seja reutilizavel e G1 reprova - logo G1 testa esta garantia,
+  e nao outra coisa.
+limitations:
+- nao cobre corrupcao do arquivo de cache por terceiro
+- o cache e por (repo, snapshot, ambiente); nao ha alegacao sobre colisao de digest
+status: supported-in-tested-domain
+counterexamples:
+- commit: pre-0010
+  result: refuted
+  note: o carimbo era gravado ANTES de executar, e a segunda parada saia 0 com codigo quebrado

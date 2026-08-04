@@ -1,0 +1,28 @@
+# Ledger de alegacoes - ver evidence/validate-claims.py para o contrato.
+# REFERENCIA evidencia existente; nunca a duplica.
+claim_id: C-007
+claim: O modo --dry-run do instalador nao altera estado algum, byte a byte.
+type: security-property
+scope:
+  commit: '1319931'
+  platforms:
+  - local-linux
+  - github-ubuntu-24.04
+evidence:
+  regression:
+  - G10
+  mutants:
+  - MI1
+  ci_run: https://github.com/MrSchrodingers/evidence-gate/actions/workflows/verify.yml
+warrant: G10 compara o digest do diretorio inteiro antes e depois, exige que o orfao continue no disco,
+  que o plano ANUNCIE a remocao, que nenhum backup seja criado, e - decisivo - que o dry-run tenha de
+  fato executado (exit 0). Sem essa ultima assercao um cd falho tornava 'estado identico' trivialmente
+  verdadeiro. MI1 transforma o portao em filtro e mata o caso.
+limitations:
+- cobre o instalador deste repositorio; nao e alegacao geral sobre modos dry-run
+status: supported-in-tested-domain
+counterexamples:
+- commit: 9ddb1fa
+  result: refuted
+  note: a convergencia rodava rm -rf ANTES da checagem de DRY; o modo anunciado como inspecao segura apagou
+    um componente

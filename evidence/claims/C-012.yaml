@@ -1,0 +1,26 @@
+# Ledger de alegacoes - ver evidence/validate-claims.py para o contrato.
+# REFERENCIA evidencia existente; nunca a duplica.
+claim_id: C-012
+claim: 'O manifesto e reproduzivel: invariante sob locale e sob ordem de leitura do filesystem, e reflete
+  a arvore committada.'
+type: empirical-invariant
+scope:
+  commit: '1319931'
+  platforms:
+  - local-linux
+  - github-ubuntu-24.04
+evidence:
+  regression:
+  - R1
+  - R2
+  - R3
+  ci_run: https://github.com/MrSchrodingers/evidence-gate/actions/workflows/verify.yml
+warrant: R1 usa discriminador COMPORTAMENTAL de locale (a ordenacao precisa diferir de C) porque verificar
+  o NOME do locale nao verifica efeito - `locale` ecoa nomes inexistentes. Ha ainda uma assercao-guarda
+  exigindo que ao menos um locale de ordenacao distinta tenha sido exercitado, sem a qual um ambiente
+  sem locales alternativos daria verde sem exercitar nada.
+limitations:
+- a contagem de R1 e ambiente-dependente (locales instalados); por isso o status gerado registra 'variavel'
+  em vez de numero, e vale o exit code
+- sem nenhum locale alternativo instalado a suite REPROVA em vez de passar vacuamente
+status: supported-in-tested-domain

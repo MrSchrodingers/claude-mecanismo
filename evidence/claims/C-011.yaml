@@ -1,0 +1,32 @@
+# Ledger de alegacoes - ver evidence/validate-claims.py para o contrato.
+# REFERENCIA evidencia existente; nunca a duplica.
+claim_id: C-011
+claim: Execucao concorrente das suites e DETECTADA e reprovada, em vez de produzir resultado plausivel
+  e errado.
+type: empirical-invariant
+scope:
+  commit: '1319931'
+  platforms:
+  - local-linux
+  - github-ubuntu-24.04
+evidence:
+  regression:
+  - C1
+  - C2
+  - C3
+  - C4
+  ci_run: https://github.com/MrSchrodingers/evidence-gate/actions/workflows/verify.yml
+warrant: 'C1 exige que a segunda execucao concorrente saia 3 e nao execute o corpo; C2, que apos a liberacao
+  volte ao normal; C3, que a re-entrancia por marca herdada nao trave o filho - sem ela o lock seria deadlock
+  por desenho, ja que os runners de mutacao invocam as suites. C4 e o discriminador: prova que `env -u`
+  limpou a marca, sem o que C1 estaria medindo outra coisa.'
+limitations:
+- protege contra corrida entre suites DESTE repositorio; nao contra edicao manual concorrente nem contra
+  outro clone apontando para o mesmo ~/.claude
+- sem flock nao ha exclusao mutua - a suite sai 2 (NAO VERIFICADO) e o lock avisa por stderr
+status: supported-in-tested-domain
+counterexamples:
+- commit: 36db96f
+  result: refuted
+  note: contrato.sh concorrente com run.sh produzia 'FAIL BARRA blocos completos SEM ancora (got=0 want=2)',
+    exit 1; isolada, 45/45

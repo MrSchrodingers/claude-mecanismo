@@ -1,0 +1,35 @@
+# Ledger de alegacoes - ver evidence/validate-claims.py para o contrato.
+# REFERENCIA evidencia existente; nunca a duplica.
+claim_id: C-013
+claim: 'A cadeia de suprimentos do gate externo e identificavel: actions por SHA, pacotes pip com ==,
+  imagem nomeada, e excecao de apt declarada por escrito.'
+type: security-property
+scope:
+  commit: '1319931'
+  platforms:
+  - local-linux
+  - github-ubuntu-24.04
+evidence:
+  regression:
+  - S1
+  - S2
+  - S3
+  - S4
+  - S5
+  - S6
+  ci_run: https://github.com/MrSchrodingers/evidence-gate/actions/workflows/verify.yml
+warrant: S1 a S4 verificam pinagem; S5 exige que todo pacote declarado em .requires por algum adaptador
+  seja instalado pela CI, e S6 que o proprio oraculo de comparacao de versao (packaging) esteja pinado
+  - do contrario a garantia valeria localmente e seria indefinida no ambiente remoto. A ausencia de packaging
+  reprova a suite com exit 2, em vez de virar SKIP que encolhe o esperado.
+limitations:
+- 'apt NAO e pinado - excecao declarada por escrito: fixar versao apt quebraria a cada atualizacao da
+  imagem e desligaria o gate por ruido. A garantia vem da imagem nomeada mais o registro das versoes no
+  log'
+- 'ubuntu-24.04 fixa familia, nao digest: ambiente auditavel, nao hermetico'
+status: supported-in-tested-domain
+counterexamples:
+- commit: pre-adendo-4
+  result: refuted
+  note: pymupdf entrou sem versao no gate externo, terceira ocorrencia da classe 'regra propria nao aplicada
+    ao proprio acrescimo'

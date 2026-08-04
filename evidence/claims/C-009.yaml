@@ -1,0 +1,35 @@
+# Ledger de alegacoes - ver evidence/validate-claims.py para o contrato.
+# REFERENCIA evidencia existente; nunca a duplica.
+claim_id: C-009
+claim: O contrato de retorno de subagente aceita evidencia real em PT-BR, e invariante ao locale, e REPROVA
+  retorno sem ancora.
+type: empirical-invariant
+scope:
+  commit: '1319931'
+  platforms:
+  - local-linux
+  - github-ubuntu-24.04
+evidence:
+  regression:
+  - R4
+  mutants:
+  - MC1
+  - MC2
+  - MC4
+  - MC5
+  ci_run: https://github.com/MrSchrodingers/evidence-gate/actions/workflows/verify.yml
+warrant: R4 exercita as DUAS fontes que o hook le (last_assistant_message e agent_transcript_path) sob
+  LC_ALL=C e en_US.UTF-8, e inclui um discriminador que exige reprovacao de retorno sem ancora - sem ele,
+  exit 0 nao distingue aprovacao de inercia. MC4 torna o oraculo vacuo e morre nesse discriminador; MC5
+  remove a normalizacao de acento; MC1 e MC2 removem as duas tolerancias que o falso bloqueio medido exigiu.
+limitations:
+- o hook verifica FORMA de ancora, nunca veracidade. Fabricacao deliberada de evidencia esta fora do alcance
+  deste mecanismo
+- o limite de 3 tokens intermediarios no reconhecimento de comando e heuristico e foi calibrado contra
+  um corpus de 15 casos, nao derivado de principio
+status: supported-in-tested-domain
+counterexamples:
+- commit: 0045a95
+  result: refuted
+  note: R4 montava o payload com transcript_path e subagent_type, campos que o hook nao le; saia no filtro
+    de tipo e um mutante que apagava TODA a normalizacao sobrevivia

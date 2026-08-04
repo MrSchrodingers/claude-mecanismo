@@ -1,0 +1,28 @@
+# Ledger de alegacoes - ver evidence/validate-claims.py para o contrato.
+# REFERENCIA evidencia existente; nunca a duplica.
+claim_id: C-005
+claim: Dependencia estrutural ausente produz NAO VERIFICADO, nunca sucesso silencioso.
+type: security-property
+scope:
+  commit: '1319931'
+  platforms:
+  - local-linux
+  - github-ubuntu-24.04
+evidence:
+  regression:
+  - G5
+  - G6
+  - G9
+  mutants:
+  - M5
+  - M6
+  - M9
+  ci_run: https://github.com/MrSchrodingers/evidence-gate/actions/workflows/verify.yml
+warrant: 'Tres formas independentes da mesma classe: tabela de adaptadores ausente (G5), jq ausente (G6)
+  e git ausente com .git presente (G9). Cada mutante reintroduz o exit 0 mudo e mata o caso correspondente.
+  A distincao que sustenta a propriedade: ausencia de ORACULO e nao-verificacao; ausencia de FRONTEIRA
+  e inercia legitima.'
+limitations:
+- fora de repositorio git a inercia e legitima e nao e coberta por esta alegacao
+- nao ha enumeracao exaustiva de dependencias estruturais; as tres cobertas sao as que ja falharam
+status: supported-in-tested-domain

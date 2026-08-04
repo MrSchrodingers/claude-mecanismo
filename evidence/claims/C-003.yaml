@@ -1,0 +1,27 @@
+# Ledger de alegacoes - ver evidence/validate-claims.py para o contrato.
+# REFERENCIA evidencia existente; nunca a duplica.
+claim_id: C-003
+claim: A identidade de um snapshot cobre os BYTES dos arquivos e a identidade do binario verificador,
+  nao apenas nomes e caminhos.
+type: empirical-invariant
+scope:
+  commit: '1319931'
+  platforms:
+  - local-linux
+  - github-ubuntu-24.04
+evidence:
+  regression:
+  - G3
+  - G8
+  mutants:
+  - M3
+  - M8
+  ci_run: https://github.com/MrSchrodingers/evidence-gate/actions/workflows/verify.yml
+warrant: G3 troca o conteudo de um arquivo untracked mantendo o nome e exige reprovacao; G8 troca o binario
+  mantendo o caminho e exige que o cache seja invalidado. M3 reduz a identidade a nomes e M8 ao caminho
+  do binario; cada um mata o caso correspondente.
+limitations:
+- sha256 - nenhuma alegacao sobre resistencia a colisao adversaria
+- a identidade do ambiente cobre realpath, hash e versao do binario; nao cobre bibliotecas carregadas
+  dinamicamente
+status: supported-in-tested-domain

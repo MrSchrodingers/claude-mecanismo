@@ -1,0 +1,25 @@
+# Ledger de alegacoes - ver evidence/validate-claims.py para o contrato.
+# REFERENCIA evidencia existente; nunca a duplica.
+claim_id: C-008
+claim: 'Commit local sem upstream nao desaparece do conjunto de mudancas: o gate nao fica inerte quando
+  ha artefato pronto para atravessar.'
+type: empirical-invariant
+scope:
+  commit: '1319931'
+  platforms:
+  - local-linux
+  - github-ubuntu-24.04
+evidence:
+  regression:
+  - G12
+  mutants:
+  - M10
+  ci_run: https://github.com/MrSchrodingers/evidence-gate/actions/workflows/verify.yml
+warrant: 'G12 tem tres casos que so valem juntos: commit quebrado sem upstream BARRA; o mesmo commit limpo
+  LIBERA (senao a garantia seria satisfeita por um gate que barra sempre); e sem remoto a inercia segue
+  legitima, fixando a fronteira semantica. M10 remove a busca de base e mata o primeiro.'
+limitations:
+- a base sem upstream e o ponto de divergencia com origin/HEAD, main ou master; um fluxo com outro alvo
+  de publicacao cai no ramo da arvore vazia e verifica mais do que o necessario, nunca menos
+- sem remoto nenhum o gate e inerte por desenho - e ausencia de fronteira, nao cobertura
+status: supported-in-tested-domain

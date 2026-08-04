@@ -1,0 +1,23 @@
+# Ledger de alegacoes - ver evidence/validate-claims.py para o contrato.
+# REFERENCIA evidencia existente; nunca a duplica.
+claim_id: C-004
+claim: 'Num monorepo, todo adaptador aplicavel e verificado: um ecossistema valido nao mascara outro quebrado.'
+type: empirical-invariant
+scope:
+  commit: '1319931'
+  platforms:
+  - local-linux
+  - github-ubuntu-24.04
+evidence:
+  regression:
+  - G4
+  mutants:
+  - M4
+  ci_run: https://github.com/MrSchrodingers/evidence-gate/actions/workflows/verify.yml
+warrant: G4 monta um repo com JS valido e Python quebrado e exige exit 2. M4 faz o laco parar no primeiro
+  adaptador aplicavel e G4 reprova, o que prova que o caso mede a conjuncao e nao a presenca de um verificador
+  qualquer.
+limitations:
+- conjuncao sobre adaptadores APLICAVEIS por extensao tocada; arquivo sem adaptador continua sem cobertura,
+  e isso e lacuna declarada
+status: supported-in-tested-domain

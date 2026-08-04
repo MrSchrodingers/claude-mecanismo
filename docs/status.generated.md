@@ -12,6 +12,8 @@ O README referencia este arquivo em vez de duplicar numeros.
 | `tests/unit/supply-chain.sh` | 6 | 0 |
 | `tests/unit/reprodutibilidade.sh` | variavel (ambiente) | 0 |
 | `tests/unit/concorrencia.sh` | 8 | 0 |
+| `tests/unit/claims.sh` | 15 | 0 |
+| `tests/unit/propriedades.sh` | 22 | 0 |
 | `tests/unit/run.sh` | 45 | 0 |
 
 ## Mutacao
@@ -36,9 +38,16 @@ O README referencia este arquivo em vez de duplicar numeros.
 ## Limites declarados
 
 - politica `governed=user`: alteravel pelo ator governado; raiz de confianca nao implementada
-- CI executa mas NAO impoe: falta required status check e ruleset sem bypass
 - ambiente auditavel, nao hermetico: `ubuntu-24.04` fixa familia, nao digest
 - sem corpus de desfecho: nenhuma afirmacao sobre eficacia de engenharia
 - sem auditoria autoralmente independente: a CI e observador ambiental
 - sem sandbox: parsers de documento rodam com a autoridade do usuario
-- precedencia de hooks no runtime nao confirmada (`/hooks`, `--debug`)
+- o ruleset IMPOE, mas quem tem admin pode DESATIVA-LO: nao ha bypass dentro da
+  regra (medido), e nao que a regra seja irremovivel
+
+## Deixaram de ser limites (medidos em 2026-08-04)
+
+- `CI executa mas NAO impoe`: o ruleset esta ativo com `bypass_actors` vazio e o push
+  direto do ADMIN foi recusado (GH013). Ver `evidence/observations/2026-08-04-fronteira-externa-e-contrato-no-runtime.md`
+- `precedencia de hooks nao confirmada`: medida - hooks de plugin SOMAM aos de usuario,
+  nao os sobrepoem. Ver `evidence/observations/2026-08-04-precedencia-de-hooks.md`

@@ -1,0 +1,27 @@
+# Ledger de alegacoes - ver evidence/validate-claims.py para o contrato.
+# REFERENCIA evidencia existente; nunca a duplica.
+claim_id: C-010
+claim: Declarar 'nao verificado' e uma saida valida do contrato de subagente, e nao equivale a retorno
+  sem lastro.
+type: method-rule
+scope:
+  commit: '1319931'
+  platforms:
+  - local-linux
+  - github-ubuntu-24.04
+evidence:
+  mutants:
+  - MC3
+  ci_run: https://github.com/MrSchrodingers/evidence-gate/actions/workflows/verify.yml
+warrant: 'A mensagem de bloqueio do proprio hook promete por escrito que ''nao verificado e resposta valida'',
+  e o CLAUDE.md secao 4 a declara valida. Medido: antes da correcao, um retorno declarando nao-verificacao
+  recebia exit 2 IDENTICO ao de prosa vazia, de modo que o unico caminho estavel para atravessar o portao
+  era APRESENTAR uma ancora. MC3 remove o ramo e mata o caso correspondente.'
+limitations:
+- 'a declaracao e um ROTULO, nao uma verificacao: o orquestrador e quem cobra o que ficou por verificar'
+- nao ha mecanismo que impeca usar a declaracao como atalho; o custo dela e social, nao tecnico
+status: supported-in-tested-domain
+counterexamples:
+- commit: 0045a95
+  result: refuted
+  note: 'instrucao inexequivel: o hook bloqueava exatamente o que mandava fazer'

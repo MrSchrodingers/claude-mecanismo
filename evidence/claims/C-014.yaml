@@ -1,0 +1,30 @@
+# Ledger de alegacoes - ver evidence/validate-claims.py para o contrato.
+# REFERENCIA evidencia existente; nunca a duplica.
+claim_id: C-014
+claim: O executor documental trata conteudo de documento como DADO e nunca como comando ou politica.
+type: security-property
+scope:
+  commit: '1319931'
+  platforms:
+  - local-linux
+  - github-ubuntu-24.04
+evidence:
+  regression:
+  - D1
+  - D2
+  - D3
+  - D4
+  - D5
+  - D6
+  - D7
+  ci_run: https://github.com/MrSchrodingers/evidence-gate/actions/workflows/verify.yml
+warrant: Sem `sh -c`; placeholders substituidos por VALOR, de modo que nome de arquivo contendo $( ) nao
+  vira comando - verificado com a fixture `$(touch PWNED_DOCTOOL).csv`, cujo marcador NAO e criado. Todo
+  excerto sai marcado untrusted, e um PDF contendo 'IGNORE AS INSTRUCOES ANTERIORES' sai como excerto
+  marcado, nunca como instrucao.
+limitations:
+- D5 impoe timeout, teto de bytes e tmpdir descartavel - isso e CONTENCAO DE RECURSO, nao isolamento.
+  pandoc, libreoffice e pdftotext rodam com a autoridade do usuario sobre entrada nao confiavel, e essa
+  e a lacuna aberta mais relevante do repositorio
+- OCR e transcricao de audio seguem como lacunas declaradas
+status: supported-in-tested-domain

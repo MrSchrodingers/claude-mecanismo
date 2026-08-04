@@ -1,0 +1,25 @@
+# Ledger de alegacoes - ver evidence/validate-claims.py para o contrato.
+# REFERENCIA evidencia existente; nunca a duplica.
+claim_id: C-016
+claim: 'A fronteira externa IMPOE: o ator governado, mesmo com autoridade de administrador, nao contorna
+  o required check.'
+type: runtime-observation
+scope:
+  commit: '1319931'
+  platforms:
+  - local-linux
+  - github-ubuntu-24.04
+evidence:
+  observation:
+    command: 'git push origin fase1/contrato-ancora:main  # -> GH013, exit 1, origin/main inalterado'
+    recorded: evidence/observations/2026-08-04-fronteira-externa-e-contrato-no-runtime.md
+  ci_run: https://github.com/MrSchrodingers/evidence-gate/actions/workflows/verify.yml
+warrant: 'Criar o ruleset nao e impor. O push foi TENTADO a partir do token com admin: true - a maior
+  autoridade do ator sobre o repositorio - e recusado com GH013 citando as duas regras; origin/main permaneceu
+  em 92908d1. Em rulesets o bypass so existe por concessao explicita, e bypass_actors esta vazio.'
+limitations:
+- 'a garantia e da plataforma, nao deste repositorio: quem tem admin pode DESATIVAR o ruleset. O provado
+  e que nao ha bypass DENTRO da regra, nao que a regra seja irremovivel - desativar deixa rastro no audit
+  log, contornar em silencio nao deixaria'
+- nada aqui mede eficacia de engenharia; mede que o portao existe e recusa
+status: supported-in-tested-domain

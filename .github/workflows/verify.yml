@@ -30,8 +30,10 @@ jobs:
         run: |
           set -euo pipefail
           export DEBIAN_FRONTEND=noninteractive
-          python3 -m pip install --quiet 'ruff==0.15.5' 'pandas==2.2.3' 'openpyxl==3.1.5' 'pymupdf==1.27.1' 'packaging==25.0'
+          python3 -m pip install --quiet 'ruff==0.15.5' 'pandas==2.2.3' 'openpyxl==3.1.5' 'pymupdf==1.27.1' 'packaging==25.0' 'pyyaml==6.0.2'
           # packaging: dependencia do ORACULO de supply-chain (S5), nao capacidade opcional.
+          # pyyaml: dependencia do ORACULO do claim ledger. Ausente, o validador sai 2
+          # (NAO VERIFICADO) em vez de aprovar - ver tests/unit/claims.sh, caso L9.
           # pandas/openpyxl/pymupdf: declarados pelos adaptadores em
           # execution/adapters/documents/. Versoes exatas - tag e faixa sao mutaveis, e numa
           # fronteira que decide se um artefato atravessa a entrada precisa ser identificavel.
@@ -85,6 +87,10 @@ jobs:
         run: bash tests/unit/document-tools.sh
       - name: reprodutibilidade (metamorfico)
         run: bash tests/unit/reprodutibilidade.sh
+      - name: propriedades (detectores invariantes a formatacao)
+        run: bash tests/unit/propriedades.sh
+      - name: claim ledger (evidencia citada existe)
+        run: bash tests/unit/claims.sh
       - name: concorrencia (lock das suites)
         run: bash tests/unit/concorrencia.sh
       - name: status gerado reflete a execucao

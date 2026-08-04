@@ -12,14 +12,23 @@ set -uo pipefail
 cd "$(dirname "$0")/../.." || exit 1
 # LOCK: suites deste repo nao sao reentrantes entre si (tests/lib/lock.sh).
 . "$(dirname "$0")/../lib/lock.sh"
-WF=".github/workflows"
+# WF parametrizavel SO para teste de propriedade (tests/unit/propriedades.sh), que precisa
+# alimentar o detector com variantes de formatacao. Em uso normal e o diretorio real.
+WF="${SUPPLY_CHAIN_WF_DIR:-.github/workflows}"
 P=0; F=0
 chk(){ if [ "$2" = "$3" ]; then echo "  PASS  $1"; P=$((P+1)); else echo "  FAIL  $1 (got=$2 want=$3)"; F=$((F+1)); fi; }
 
 echo "== S1. toda action e pinada por SHA completo, nunca por tag =="
+# DEFEITO MEDIDO (2026-08-04, tests/unit/propriedades.sh): o recorte era `${line#*uses: }`, com
+# UM espaco literal. Com `uses:  actions/checkout@v4` (dois espacos) o prefixo casava ate o
+# primeiro espaco, sobrava " actions/..." comecando por espaco, e `${ref%% *}` devolvia string
+# VAZIA - que nao casa nenhum padrao do `case`, e a action nao pinada passava batida.
+# Um detector de seguranca que depende do numero de espacos nao e detector.
 BAD=""
 while IFS= read -r line; do
-  ref="${line#*uses: }"; ref="${ref%% *}"
+  ref="${line#*uses:}"
+  ref="${ref#"${ref%%[![:space:]]*}"}"   # descarta espaco inicial, quantos forem
+  ref="${ref%% *}"
   case "$ref" in
     */*@[0-9a-f]*) sha="${ref##*@}"
       [ "${#sha}" -eq 40 ] || BAD="$BAD $ref" ;;
@@ -29,10 +38,33 @@ done < <(grep -h "uses:" "$WF"/*.yml 2>/dev/null)
 chk "nenhuma action por tag ou SHA curto" "${BAD:-nenhuma}" "nenhuma"
 
 echo "== S2. todo pacote pip tem versao exata =="
+# DEFEITO MEDIDO (2026-08-04): o filtro era `grep "^'"`, isto e, so enxergava tokens iniciados
+# por ASPA SIMPLES. Medido: `pip install requests` e `pip install "requests"` PASSAVAM - um
+# pacote sem pinagem atravessava o gate inteiro apenas por nao estar entre aspas simples.
+# Era a propria classe que S2 existe para impedir (o `pymupdf` sem versao), sobrevivendo a
+# regra por diferenca de formatacao.
+#
+# Agora a tokenizacao e do COMANDO, nao do aspecto: tudo depois de `pip install` vira token,
+# aspas de qualquer tipo sao removidas, flags e continuacao de linha sao descartadas, e o que
+# resta e especificacao de pacote e precisa de `==`.
+# LIMITE DECLARADO: `-r requirements.txt` faria o caminho ser lido como pacote. Este workflow
+# nao usa essa forma; se passar a usar, o caso reprova e a regra tera de crescer - reprovar por
+# forma nao prevista e o comportamento correto numa fronteira de evidencia.
 BAD=""
-while IFS= read -r pkg; do
-  case "$pkg" in *==*) ;; *) BAD="$BAD $pkg";; esac
-done < <(grep -h "pip install" "$WF"/*.yml 2>/dev/null | tr ' ' '\n' | grep "^'" | tr -d "'")
+while IFS= read -r line; do
+  rest="${line#*pip install}"
+  # `read -ra` divide por IFS sem expandir glob; `for tok in $rest` expandiria `*` contra o
+  # diretorio corrente e poderia inventar tokens.
+  read -ra toks <<<"$rest"
+  for tok in "${toks[@]}"; do
+    tok="${tok%\"}"; tok="${tok#\"}"; tok="${tok%\'}"; tok="${tok#\'}"
+    case "$tok" in
+      ""|"\\"|-*) continue ;;
+      *==*) ;;
+      *) BAD="$BAD $tok" ;;
+    esac
+  done
+done < <(grep -h "pip install" "$WF"/*.yml 2>/dev/null)
 chk "nenhum pacote pip sem ==" "${BAD:-nenhum}" "nenhum"
 
 echo "== S3. o runner e uma imagem nomeada, nao 'latest' =="

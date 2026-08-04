@@ -29,7 +29,8 @@ TMP="$(mktemp)"
   # que ele existe para impedir. A CI pegou isso na primeira execucao. Para essas suites vale o
   # exit code, que e estavel; a contagem fica marcada como variavel.
   for t in tests/unit/regressao-gate.sh tests/unit/document-tools.sh tests/unit/supply-chain.sh \
-           tests/unit/reprodutibilidade.sh tests/unit/concorrencia.sh tests/unit/run.sh; do
+           tests/unit/reprodutibilidade.sh tests/unit/concorrencia.sh \
+           tests/unit/claims.sh tests/unit/propriedades.sh tests/unit/run.sh; do
     bash "$t" >/dev/null 2>&1; rc=$?
     if grep -q 'EXPECTED=\$((' "$t"; then n="variavel (ambiente)"
     else n="$(conta "$t")"; fi
@@ -47,12 +48,20 @@ TMP="$(mktemp)"
   printf '| **total** | **%s** |\n' "$(grep -vc '^#' install/manifest.lock)"
   printf '\n## Limites declarados\n\n'
   printf -- '- politica `governed=user`: alteravel pelo ator governado; raiz de confianca nao implementada\n'
-  printf -- '- CI executa mas NAO impoe: falta required status check e ruleset sem bypass\n'
   printf -- '- ambiente auditavel, nao hermetico: `ubuntu-24.04` fixa familia, nao digest\n'
   printf -- '- sem corpus de desfecho: nenhuma afirmacao sobre eficacia de engenharia\n'
   printf -- '- sem auditoria autoralmente independente: a CI e observador ambiental\n'
   printf -- '- sem sandbox: parsers de documento rodam com a autoridade do usuario\n'
-  printf -- '- precedencia de hooks no runtime nao confirmada (`/hooks`, `--debug`)\n'
+  printf -- '- o ruleset IMPOE, mas quem tem admin pode DESATIVA-LO: nao ha bypass dentro da\n'
+  printf -- '  regra (medido), e nao que a regra seja irremovivel\n'
+  printf '\n## Deixaram de ser limites (medidos em 2026-08-04)\n\n'
+  # Limite que continua escrito depois de resolvido e a mesma classe de drift que originou este
+  # arquivo: narrativa em copia separada do mecanismo. Some da lista, mas com o rastro de onde
+  # a medicao esta - do contrario o leitor nao sabe se foi resolvido ou apagado.
+  printf -- '- `CI executa mas NAO impoe`: o ruleset esta ativo com `bypass_actors` vazio e o push\n'
+  printf -- '  direto do ADMIN foi recusado (GH013). Ver `evidence/observations/2026-08-04-fronteira-externa-e-contrato-no-runtime.md`\n'
+  printf -- '- `precedencia de hooks nao confirmada`: medida - hooks de plugin SOMAM aos de usuario,\n'
+  printf -- '  nao os sobrepoem. Ver `evidence/observations/2026-08-04-precedencia-de-hooks.md`\n'
 } > "$TMP"
 
 if [ "$CHECK" -eq 1 ]; then

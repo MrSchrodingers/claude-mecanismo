@@ -1,0 +1,26 @@
+# Ledger de alegacoes - ver evidence/validate-claims.py para o contrato.
+# REFERENCIA evidencia existente; nunca a duplica.
+claim_id: C-015
+claim: Hooks de plugin SOMAM aos hooks de escopo de usuario; nao os sobrepoem. A condicao de refutacao
+  do ADR 0022 nao se realizou.
+type: runtime-observation
+scope:
+  commit: '1319931'
+  platforms:
+  - local-linux
+  - github-ubuntu-24.04
+evidence:
+  observation:
+    command: claude -p --output-format stream-json --include-hook-events --verbose [--plugin-dir <sonda>]
+    recorded: evidence/observations/2026-08-04-precedencia-de-hooks.md
+  ci_run: https://github.com/MrSchrodingers/evidence-gate/actions/workflows/verify.yml
+warrant: 'Predicao registrada ANTES do tratamento e confirmada exatamente: SessionStart 2->3, UserPromptSubmit
+  4->5, Stop 3->4, com os tres marcadores da sonda presentes. Duas fontes independentes: os eventos do
+  runtime e o heartbeat gravado pelo hook de usuario, que continuou incrementando - se plugin sobrepusesse
+  o escopo de usuario, o heartbeat teria parado.'
+limitations:
+- uma versao de runtime (2.1.220) e uma plataforma (Linux)
+- 'nao cobre managed settings com allowManagedHooksOnly, cuja semantica documentada e oposta: bloqueia
+  hooks de usuario E de plugin'
+- a ORDEM de execucao dentro de um mesmo evento nao foi medida, apenas o conjunto
+status: supported-in-tested-domain
