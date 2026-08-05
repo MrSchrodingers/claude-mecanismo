@@ -1,0 +1,25 @@
+# TEMPORARIO: exporta o snapshot exato para reproducao local fora do runner.
+# Removido antes do merge; actions pinadas por SHA completo para nao abrir excecao no gate.
+name: export-source
+on:
+  pull_request:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  export-source:
+    name: export-source
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with: { fetch-depth: 0 }
+      - name: empacota snapshot
+        run: tar --exclude=.git -czf "$RUNNER_TEMP/evidence-gate-source.tgz" .
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: evidence-gate-source-${{ github.sha }}
+          path: ${{ runner.temp }}/evidence-gate-source.tgz
+          if-no-files-found: error
+          retention-days: 1
