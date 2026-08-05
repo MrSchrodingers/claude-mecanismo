@@ -5,7 +5,7 @@ claim: O contrato de retorno de subagente aceita evidencia real em PT-BR, e inva
   retorno sem ancora.
 type: empirical-invariant
 scope:
-  commit: c3ffe52
+  subject_snapshot: c3ffe5202bc87e59a61d1a2bcac0f4c8b65953af
   platforms:
   - local-linux
   - github-ubuntu-24.04
@@ -19,7 +19,10 @@ evidence:
   - MC5
   - MC6
   - MC7
-  ci_run: https://github.com/MrSchrodingers/evidence-gate/actions/workflows/verify.yml
+  ci:
+    run_id: 30924006484
+    head_sha: c3ffe5202bc87e59a61d1a2bcac0f4c8b65953af
+    workflow: verify
 warrant: R4 exercita as DUAS fontes que o hook le (last_assistant_message e agent_transcript_path) sob
   LC_ALL=C e en_US.UTF-8, e inclui um discriminador que exige reprovacao de retorno sem ancora - sem ele,
   exit 0 nao distingue aprovacao de inercia. MC4 torna o oraculo vacuo e morre nesse discriminador; MC5

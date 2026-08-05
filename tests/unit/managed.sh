@@ -241,9 +241,133 @@ chk "  --enforce REPROVA: a politica declara hook que nao esta no disco" "$rc" 1
 chk "  e allowManagedHooksOnly nao foi ativado" \
     "$(jq -r '.allowManagedHooksOnly' "$FK9/etc/claude-code/managed-settings.json" 2>/dev/null || echo ausente)" "ausente"
 
+echo "== MG15. deploy REPROVADO deixa a arvore ativa BYTE A BYTE inalterada =="
+# ACHADO DA AUDITORIA EXTERNA (2026-08-04). O laco de copia escrevia DIRETO na arvore ativa e os
+# portoes rodavam depois; o proprio script admitia a consequencia no caminho de falha:
+# "ATENCAO: arquivos sob $OPT PODEM ter sido escritos antes desta checagem". Um deploy reprovado
+# podia deixar a arvore com alguns componentes na versao nova e outros na antiga - e a politica
+# velha continuava apontando para ela. A propriedade que faltava:
+#
+#     DeployFail  =>  ActiveState_depois == ActiveState_antes
+#
+# Este caso a exercita como PROPRIEDADE, comparando o digest da arvore inteira antes e depois -
+# e nao conferindo um arquivo escolhido a dedo, que passaria mesmo com metade da arvore trocada.
+arvore_digest(){ # $1 = raiz; "" se nao existe
+  [ -d "$1" ] || { echo "AUSENTE"; return; }
+  ( cd "$1" && find . -type f -exec sha256sum {} + 2>/dev/null | LC_ALL=C sort -k2 | sha256sum | cut -d' ' -f1 )
+}
+FK15="$T/raiz15"; mkdir -p "$FK15"
+rc=$(MANAGED_PREFIX="$FK15" bash "$AM" >/dev/null 2>&1; echo $?)
+chk "deploy inicial instala (o caso precisa de uma arvore ativa para proteger)" "$rc" 0
+ATIVA15="$FK15/opt/evidence-gate"
+ANTES15="$(arvore_digest "$ATIVA15")"
+chk "  a arvore ativa existe e tem digest (senao nao ha o que preservar)" \
+    "$([ "$ANTES15" != "AUSENTE" ] && [ -n "$ANTES15" ] && echo sim || echo nao)" "sim"
+
+# SEGUNDO DEPLOY QUE REPROVA NO ULTIMO PORTAO. O manifesto e valido e POPULOSO - a reprovacao vem
+# do portao de hook ausente (mesmo mecanismo de MG14), que roda DEPOIS de toda a copia. E o pior
+# caso possivel para a propriedade: se a copia fosse direto na ativa, a essa altura ela ja teria
+# sido reescrita inteira.
+rc=$(MANAGED_PREFIX="$FK15" MANAGED_MANIFEST="$SEMHOOK" bash "$AM" >/dev/null 2>&1; echo $?)
+chk "  o segundo deploy REPROVA no portao (precondicao do caso)" "$rc" 1
+DEPOIS15="$(arvore_digest "$ATIVA15")"
+chk "  e a arvore ativa esta BYTE A BYTE identica a antes da tentativa" "$DEPOIS15" "$ANTES15"
+
+# ANTIVACUIDADE: se o segundo deploy nao tivesse NADA de diferente a escrever, os digests seriam
+# iguais mesmo com o codigo antigo, e o caso mediria zero. O manifesto degradado tem uma linha a
+# menos - logo, um deploy bem-sucedido dele PRODUZIRIA uma arvore diferente.
+FK15B="$T/raiz15b"; mkdir -p "$FK15B"
+MANAGED_PREFIX="$FK15B" MANAGED_MANIFEST="$SEMHOOK" bash "$AM" --dry-run >/dev/null 2>&1
+chk "  e o manifesto degradado descreve MESMO uma arvore diferente (nao vacuo)" \
+    "$([ "$(awk -F'\t' '!/^#/ && ($1=="hook"||$1=="adapter"||$1=="doctool")' "$SEMHOOK" | wc -l)" \
+       -ne "$(awk -F'\t' '!/^#/ && ($1=="hook"||$1=="adapter"||$1=="doctool")' install/manifest.lock | wc -l)" ] \
+       && echo sim || echo nao)" "sim"
+
+echo "== MG16. deploy reprovado nao deixa area de staging orfa =="
+# Staging orfa sob /opt seria lixo root-owned acumulando a cada tentativa falha - e, pior, um
+# diretorio com os hooks completos fora de qualquer inspecao do --verify.
+chk "nenhum diretorio *.stage.* remanescente" \
+    "$(find "$FK15/opt" -maxdepth 1 -name 'evidence-gate.stage.*' 2>/dev/null | wc -l | tr -d ' ')" "0"
+chk "  nem *.anterior.* (a troca limpa o que afastou)" \
+    "$(find "$FK15/opt" -maxdepth 1 -name 'evidence-gate.anterior.*' 2>/dev/null | wc -l | tr -d ' ')" "0"
+
+echo "== MG17. falha APOS a publicacao devolve o estado ativo INTEIRO =="
+# SEGUNDO ACHADO SOBRE ESTE MESMO CODIGO (revisao independente do PR #5). MG15 so provoca falha
+# ANTES da publicacao, entao provava a propriedade estreita
+#     GateFail_{pre-publicacao} => OptTree inalterada
+# enquanto o commit, o PR e o README publicavam a propriedade larga
+#     DeployFail => ActiveState inalterado.
+# O dominio exercitado nao continha o contraexemplo: apos publicar a arvore, o script ainda
+# gerava e instalava o `managed-settings.json` com `mktemp`, `jq`, `cp`, `chmod` e `chown`, todos
+# APOS o ponto sem volta e nenhum com retorno verificado sob `set -uo pipefail` sem `set -e`.
+#
+# DUAS MUDANCAS DE ORACULO, e sao elas que dao poder de decisao a estes casos:
+#   1. ESTADO ATIVO = (arvore, politica). MG15 olhava so a arvore; a metade que faltava era
+#      justamente a que podia divergir.
+#   2. O segundo deploy precisa produzir um estado DIFERENTE. Com o mesmo manifesto e o mesmo
+#      modo, os digests coincidiriam mesmo com o rollback quebrado - caso vacuo. Aqui o segundo
+#      deploy usa `--enforce` (muda allowManagedHooksOnly) sobre um manifesto com um adaptador a
+#      menos (muda a arvore). As duas metades do estado mudariam se o rollback falhasse.
+estado_ativo(){ # $1 = prefixo; ecoa "digest_arvore|digest_politica"
+  local a p
+  if [ -d "$1/opt/evidence-gate" ]; then
+    a="$(cd "$1/opt/evidence-gate" && find . -type f -exec sha256sum {} + 2>/dev/null \
+         | LC_ALL=C sort -k2 | sha256sum | cut -d' ' -f1)"
+  else a="ARVORE_AUSENTE"; fi
+  if [ -f "$1/etc/claude-code/managed-settings.json" ]; then
+    p="$(sha256sum "$1/etc/claude-code/managed-settings.json" | cut -d' ' -f1)"
+  else p="POLITICA_AUSENTE"; fi
+  printf '%s|%s\n' "$a" "$p"
+}
+MENOS="$T/menos-um-adaptador.lock"
+# ADAPTADOR, e nao hook: remover hook reprova no portao de populacao ANTES da publicacao (MG14),
+# e o caso nunca chegaria a fase que precisa ser exercitada.
+# `!seen++` e nao `seen++`: pos-incremento faz a primeira ocorrencia valer 0 (falso), entao
+# `&& seen++` casaria a partir da SEGUNDA e removeria todas menos a primeira - o inverso do
+# pretendido. Medido: 10 linhas a menos em vez de 1, e a assercao de precondicao pegou.
+awk -F'\t' '!($1=="adapter" && !seen++)' install/manifest.lock > "$MENOS"
+chk "o manifesto alternativo perdeu exatamente 1 adaptador" \
+    "$(( $(wc -l < install/manifest.lock) - $(wc -l < "$MENOS") ))" "1"
+
+FK17="$T/raiz17"; mkdir -p "$FK17"
+rc=$(MANAGED_PREFIX="$FK17" bash "$AM" >/dev/null 2>&1; echo $?)
+chk "  deploy inicial instala arvore e politica" "$rc" 0
+ANTES17="$(estado_ativo "$FK17")"
+chk "  o estado ativo tem as DUAS metades (senao o oraculo e cego)" \
+    "$(case "$ANTES17" in *AUSENTE*) echo nao;; *) echo sim;; esac)" "sim"
+
+# ANTIVACUIDADE: sem o failpoint, este mesmo comando SUCEDE e muda o estado. Se nao mudasse,
+# os casos abaixo passariam mesmo com o rollback quebrado.
+FK17V="$T/raiz17v"; mkdir -p "$FK17V"
+MANAGED_PREFIX="$FK17V" bash "$AM" >/dev/null 2>&1
+MANAGED_PREFIX="$FK17V" MANAGED_MANIFEST="$MENOS" bash "$AM" --enforce >/dev/null 2>&1
+chk "  e o segundo deploy MUDARIA o estado se completasse (nao vacuo)" \
+    "$([ "$(estado_ativo "$FK17V")" != "$ANTES17" ] && echo sim || echo nao)" "sim"
+
+for FP in publicar-opt instalar-politica; do
+  rc=$(MANAGED_PREFIX="$FK17" MANAGED_MANIFEST="$MENOS" MANAGED_FAILPOINT="$FP" \
+       bash "$AM" --enforce >/dev/null 2>&1; echo $?)
+  chk "  failpoint '$FP': o deploy REPROVA" "$rc" 1
+  chk "    e o estado ativo INTEIRO volta ao anterior" "$(estado_ativo "$FK17")" "$ANTES17"
+done
+
+echo "== MG18. sucesso so e reportado quando arvore E politica convergem =="
+# O contrapositivo de MG17: sem este caso, um instalador que reprovasse SEMPRE passaria em MG17.
+rc=$(MANAGED_PREFIX="$FK17" MANAGED_MANIFEST="$MENOS" bash "$AM" --enforce >/dev/null 2>&1; echo $?)
+chk "sem failpoint, o mesmo deploy SUCEDE" "$rc" 0
+DEPOIS18="$(estado_ativo "$FK17")"
+chk "  e o estado ativo mudou (as duas metades foram commitadas)" \
+    "$([ "$DEPOIS18" != "$ANTES17" ] && echo sim || echo nao)" "sim"
+chk "  a politica no disco reflete o modo pedido (--enforce)" \
+    "$(jq -r '.allowManagedHooksOnly' "$FK17/etc/claude-code/managed-settings.json" 2>/dev/null)" "true"
+chk "  e nao restou material de rollback" \
+    "$(find "$FK17/etc/claude-code" "$FK17/opt" -maxdepth 1 \
+       \( -name '.managed-settings.json.*' -o -name 'evidence-gate.anterior.*' \
+          -o -name 'evidence-gate.stage.*' \) 2>/dev/null | wc -l | tr -d ' ')" "0"
+
 echo
 echo "================ PASS=$P  FAIL=$F ================"
-EXPECTED=46
+EXPECTED=65
 if [ "$P" -ne "$EXPECTED" ]; then
   echo "CONTAGEM INESPERADA: PASS=$P, esperado $EXPECTED. Caso removido ou nao executado."
   exit 1

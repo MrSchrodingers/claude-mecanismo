@@ -16,7 +16,7 @@ ORIG="evidence/hooks/verify-gate.sh"
 REG="tests/unit/regressao-gate.sh"
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"; cp -f "$TMP/orig.sh" "$ORIG" 2>/dev/null || true' EXIT
 cp -f "$ORIG" "$TMP/orig.sh"
-P=0; F=0; BASELINE=nao; EXPECTED_MUTANTS=10
+P=0; F=0; BASELINE=nao; EXPECTED_MUTANTS=13
 
 # BASELINE: sem isto, uma regressao quebrada por ambiente faria TODOS os mutantes parecerem
 # mortos - o runner reportaria verde justamente quando nao esta testando nada.
@@ -91,6 +91,46 @@ mutante M9 "git ausente e lacuna estrutural" "sem git, com .git presente" \
 # publicado desaparece do conjunto de mudancas e o hook fica inerte com codigo quebrado.
 mutante M10 "base de comparacao quando nao ha upstream" "commit nao publicado com codigo quebrado BARRA" \
   sed -i 's|^elif \[ -n "$(git -C "$ROOT" remote 2>/dev/null)" \]; then|elif false; then|' "$ORIG"
+
+# SUBSTITUICAO LITERAL. Os dois mutantes abaixo mexem em linhas cheias de aspas e pipes; escrever
+# isso como script `sed` produziria um padrao ilegivel e fragil - e padrao que nao casa vira
+# "teste invalido" no helper acima, nao mutante morto. `troca` falha alto se a ancora sumir.
+troca(){ # $1=trecho original  $2=substituto
+python3 - "$ORIG" "$1" "$2" <<'PYT'
+import sys
+alvo, velho, novo = sys.argv[1:4]
+s = open(alvo, encoding="utf-8").read()
+if s.count(velho) != 1:
+    sys.exit("ANCORA NAO CASOU (%d ocorrencias)" % s.count(velho))
+open(alvo, "w", encoding="utf-8").write(s.replace(velho, novo))
+PYT
+}
+
+# M11 - o digest que AUTORIZA execucao de comando do repositorio volta a ser truncado em 16 hex
+# (64 bits). Era o estado ate 2026-08-04, e a incoerencia era interna ao proprio arquivo: a
+# identidade do ambiente, ~40 linhas abaixo, ja documentava que truncar seria outra propriedade.
+mutante M11 "SHA-256 completo autoriza a execucao" "PREFIXO de 16 hex, NAO executa" \
+  troca 'CH="$(sha256sum "$REPO_VERIFY" 2>/dev/null | cut -d'"'"' '"'"' -f1)"' \
+        'CH="$(sha256sum "$REPO_VERIFY" 2>/dev/null | cut -c1-16)"'
+
+# M12 - a EXIGENCIA do contrato cai: verify.json aprovado passa a executar mesmo sem declarar
+# `replaces`/`coverage_justification`.
+#
+# NOTA DE METODO. A primeira versao deste mutante apontava para o caso-alvo de G15 e o helper
+# reprovou com "kill nao atribuivel" - corretamente. `if false` desvia para o ramo ELSE, que e o
+# comportamento CORRETO e escopado; o mutante removia so a exigencia do contrato, nao o escopo da
+# substituicao. Sao DUAS garantias, e um mutante por garantia: M12 mata G14, M13 mata G15. O
+# helper recusar o kill nao atribuivel foi o que impediu um mutante mal direcionado de contar
+# como cobertura de uma garantia que ele nao tocava.
+mutante M12 "contrato de substituicao e EXIGIDO" "o comando NAO executa" \
+  troca 'if [ -z "$SUBST" ] || [ -z "$JUST" ]; then' \
+        'if false; then'
+
+# M13 - o contrato existe mas e IGNORADO: a substituicao volta a ser total em vez de escopada, e
+# o ecossistema que o projeto nao reivindicou perde o analisador generico em silencio.
+mutante M13 "substituicao escopada ao que o projeto reivindica" "cobertura nao reivindicada permanece" \
+  troca 'APLICAVEIS=("$REPO_VERIFY" ${MANTIDOS[@]+"${MANTIDOS[@]}"})' \
+        'APLICAVEIS=("$REPO_VERIFY")'
 
 cp -f "$TMP/orig.sh" "$ORIG"
 echo

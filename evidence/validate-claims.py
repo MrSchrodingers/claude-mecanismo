@@ -25,14 +25,60 @@ Os dois espacos sao lidos de diretorios DISTINTOS de proposito: sem isso, um com
 qualquer contendo "G12" num runner de mutacao passaria a valer como mutante, e a resolucao
 deixaria de discriminar.
 
+SCHEMA v2 - POR QUE O ENDERECO DA EVIDENCIA PASSOU A SER O CONTEUDO
+------------------------------------------------------------------
+Defeito MEDIDO em 2026-08-04, em auditoria externa. C-016 declarava `scope.commit: c3ffe52` e
+seu `warrant` descrevia DOIS controles de push. No snapshot c3ffe52 a observacao citada continha
+apenas o primeiro:
+
+    $ git show c3ffe52:evidence/observations/...fronteira-externa... | grep -c 'Adendo\\|MERGED'
+    0
+
+O validador v1 conferia `git cat-file -e <commit>:<caminho>` - ou seja, que o ARQUIVO existia
+naquele snapshot. Existia. O CONTEUDO citado, nao. A sequencia que passava:
+
+    arquivo existia no snapshot
+    + conteudo foi ampliado depois
+    + a claim continuou apontando para o snapshot antigo
+    + o validador aprovava
+
+Isso viola o principio que o ledger inteiro existe para sustentar: `Evidence = Claim.Evidence`.
+Ancorar em (caminho, commit) endereca um NOME. Um nome pode passar a designar outro conteudo.
+
+v2 ancora em `blob_sha`: o hash do conteudo exato. Um endereco content-addressed nao pode
+designar outro conteudo - se o conteudo muda, o endereco muda, e a claim fica visivelmente
+desancorada ate ser reescrita. A reescrita e o ponto: obriga a reler se a alegacao ainda vale.
+
+POR QUE NAO EXISTE `claim_revision`
+-----------------------------------
+A auditoria propos separar `subject_snapshot` (o artefato avaliado) de `claim_revision` (onde a
+claim foi escrita). O primeiro esta implementado. O segundo, nao, e por impossibilidade: o SHA
+do commit que CONTEM a claim nao existe enquanto a claim esta sendo escrita - seria um campo
+auto-referente, preenchido a mao depois, e portanto nao verificavel. A revisao em que cada claim
+foi escrita ja e recuperavel, e de forma nao falsificavel, por `git log --follow` sobre o proprio
+arquivo. Um campo auto-declarado seria mais fraco que o dado que o git ja mantem.
+
+Este e tambem o motivo de a evidencia ancorar em blob e nao em commit: o blob e calculavel ANTES
+do commit (`git hash-object`), o commit nao. Content-addressing dissolve o problema do ovo e da
+galinha em vez de contorna-lo.
+
 O QUE ESTE VALIDADOR NAO FAZ - limites declarados
 ------------------------------------------------
   - Nao verifica que a evidencia SUSTENTA a alegacao. Ele confere que a evidencia EXISTE, que
     o `warrant` foi escrito e que os limites foram declarados. A ligacao entre evidencia e
     tese e argumento humano, e nenhum schema a valida.
   - Nao detecta duplicacao de evidencia dentro do texto da alegacao.
-  - Nao verifica o `ci_run`: seguir a URL exigiria rede numa fronteira de evidencia, e uma
-    dependencia de rede que falha aberto seria pior que a ausencia da checagem.
+  - Nao contata a rede. De `evidence.ci` ele confere a FORMA (`run_id` inteiro positivo) e o que
+    e checavel offline (`head_sha` e um commit DESTE repositorio). O CONCLUSION daquela execucao
+    permanece NAO VERIFICADO aqui - seguir a URL numa fronteira de evidencia criaria uma
+    dependencia de rede que, falhando aberto, seria pior que a ausencia da checagem.
+  - Nao verifica que `blob_sha` seja alcancavel a partir de `subject_snapshot`. Nao deve: foi
+    exatamente essa exigencia implicita que produziu o defeito acima. A evidencia de uma alegacao
+    pode legitimamente ser registrada DEPOIS do artefato que ela avalia.
+  - `git hash-object` nao aplica filtros de `.gitattributes`. Este repositorio nao tem
+    `.gitattributes`; num repo com filtro de conteudo (CRLF, clean/smudge) a comparacao entre o
+    blob declarado e o arquivo da arvore de trabalho poderia divergir sem que o conteudo tenha
+    mudado.
 """
 import os
 import re
@@ -48,11 +94,16 @@ except ImportError:
     # se o ledger e valido, e "nao reprovou" seria indistinguivel de "nao foi verificado".
     sys.stderr.write(
         "NAO VERIFICADO: pyyaml ausente. O ledger nao pode ser validado neste ambiente.\n"
-        "Instale a versao pinada (ver .github/workflows/verify.yml).\n")
+        "Instale a versao pinada (ver .github/workflows/verify-pr.yml).\n")
     sys.exit(EXIT_NAO_VERIFICADO)
 
 TIPOS = {"empirical-invariant", "security-property", "runtime-observation", "method-rule"}
 STATUS = {"supported-in-tested-domain", "refuted", "superseded", "not-verified"}
+# `supported-in-tested-domain` e o unico status ATIVO: e o que afirma algo hoje. Claim refutada,
+# superseded ou nao verificada e registro historico - o conteudo que ela citava PODE ter mudado
+# desde entao, e exigir que o blob ainda case com a arvore de trabalho tornaria impossivel
+# preservar o registro de uma alegacao derrubada. O blob continua tendo de EXISTIR nos dois casos.
+STATUS_ATIVO = "supported-in-tested-domain"
 OBRIGATORIOS = ("claim_id", "claim", "type", "scope", "evidence", "warrant",
                 "limitations", "status")
 RE_CLAIM_ID = re.compile(r"^C-[0-9]{3}$")
@@ -134,17 +185,46 @@ def inventario_no_commit(raiz, commit):
         return None
 
 
-def existe_no_commit(raiz, commit, caminho):
-    """O arquivo existe NAQUELE snapshot? None = indecidivel."""
+def tipo_do_objeto(raiz, sha):
+    """'blob', 'commit', ... ou None se o objeto nao existe / git indisponivel."""
     try:
-        r = subprocess.run(["git", "-C", raiz, "cat-file", "-e", f"{commit}:{caminho}"],
-                           capture_output=True, timeout=20)
-        return r.returncode == 0
+        r = subprocess.run(["git", "-C", raiz, "cat-file", "-t", sha],
+                           capture_output=True, text=True, timeout=20)
+        return r.stdout.strip() if r.returncode == 0 else None
     except (OSError, subprocess.SubprocessError):
         return None
 
 
-RE_SHA = re.compile(r"^[0-9a-fA-F]{7,40}$")
+def blob_do_arquivo(raiz, caminho):
+    """Blob sha1 do arquivo COMO ESTA na arvore de trabalho. None = indecidivel.
+
+    `--` antes do caminho: um arquivo chamado `-x` seria lido como opcao. O caminho vem de um
+    arquivo do repositorio, que num cenario de repo hostil e entrada nao confiavel.
+    """
+    try:
+        r = subprocess.run(["git", "-C", raiz, "hash-object", "--", caminho],
+                           capture_output=True, text=True, timeout=20)
+        return r.stdout.strip() if r.returncode == 0 else None
+    except (OSError, subprocess.SubprocessError):
+        return None
+
+
+def linhas_do_blob(raiz, sha):
+    """Quantas linhas tem o conteudo daquele blob? None = indecidivel."""
+    try:
+        r = subprocess.run(["git", "-C", raiz, "cat-file", "blob", sha],
+                           capture_output=True, text=True, timeout=30)
+        return len(r.stdout.splitlines()) if r.returncode == 0 else None
+    except (OSError, subprocess.SubprocessError):
+        return None
+
+
+# SHA COMPLETO, sempre. v1 aceitava de 7 a 40 e o ledger inteiro usava 7 - incoerente com a
+# decisao de identificar evidencia por sha256 completo em toda outra fronteira deste repositorio,
+# e um prefixo curto e ambiguo por construcao: colide, e a colisao e o modo de falha silencioso.
+# Minusculo obrigatorio: `git rev-parse` emite minusculo, e aceitar as duas grafias faria o
+# MESMO objeto ter duas representacoes no ledger.
+RE_SHA = re.compile(r"^[0-9a-f]{40}$")
 
 
 def commit_existe(raiz, sha):
@@ -164,6 +244,164 @@ def commit_existe(raiz, sha):
         return r.returncode == 0
     except (OSError, subprocess.SubprocessError):
         return None  # git indisponivel: nao afirmar nem negar
+
+
+def _valida_blob(doc, obs, rec, raiz, arquivo):
+    """O CONTEUDO citado e o conteudo que a claim ancorou? (v2, o coracao da correcao de C4)
+
+    v1 conferia que o ARQUIVO existia no snapshot declarado. Existia - e o conteudo citado nao.
+    Aqui o endereco e o proprio conteudo: se o arquivo mudar, `blob_sha` deixa de casar e a
+    claim fica visivelmente desancorada ate ser reescrita.
+    """
+    e = []
+    def erro(msg):
+        e.append(f"{os.path.basename(arquivo)}: {msg}")
+
+    bs = str(obs["blob_sha"])
+    if not RE_SHA.match(bs):
+        erro(f"evidence.observation.blob_sha '{bs}' nao e um SHA de 40 hex minusculos")
+        return e
+
+    tipo = tipo_do_objeto(raiz, bs)
+    if tipo is None:
+        # Nao distinguimos "git ausente" de "objeto inexistente" aqui: `commit_existe` ja
+        # reprovou com a mensagem de oraculo ausente se o git nao estiver disponivel, e um
+        # objeto que nao existe e reprovacao legitima nos dois casos.
+        erro(f"evidence.observation.blob_sha '{bs[:12]}...' nao existe neste repositorio "
+             f"(ou git indisponivel) - a evidencia citada nao tem lastro")
+        return e
+    if tipo != "blob":
+        erro(f"evidence.observation.blob_sha aponta para um objeto '{tipo}', nao um blob")
+        return e
+
+    atual = blob_do_arquivo(raiz, rec)
+    if atual is None:
+        erro(f"nao foi possivel calcular o blob de '{rec}' - NAO VERIFICADO")
+    elif atual != bs:
+        # A CLAIM ESTA DESANCORADA. Nao e necessariamente falsa: e que o lastro citado nao e
+        # mais o conteudo do arquivo, e ninguem releu se ela continua valendo. Foi exatamente
+        # esta situacao que passou despercebida em C-016.
+        if str(doc.get("status")) == STATUS_ATIVO:
+            erro(f"evidence.observation.blob_sha NAO casa com o conteudo atual de '{rec}': "
+                 f"declarado {bs[:12]}..., atual {atual[:12]}.... O conteudo citado mudou "
+                 f"desde que a alegacao foi ancorada - releia a alegacao e reancore.")
+        # status nao-ativo (refuted/superseded/not-verified): registro historico, a divergencia
+        # e esperada e o blob ja foi provado existir acima.
+
+    # LINE RANGE: opcional, mas se um extremo existe o outro tambem, e ambos precisam cair
+    # dentro do conteudo ANCORADO - nao do arquivo atual. Citar linha 900 de um arquivo de 200
+    # linhas e uma citacao que nao resolve, e o ledger nao deve aprova-la.
+    ls, le = obs.get("line_start"), obs.get("line_end")
+    if (ls is None) != (le is None):
+        erro("evidence.observation: 'line_start' e 'line_end' vem em par ou nenhum dos dois")
+    elif ls is not None:
+        if not isinstance(ls, int) or not isinstance(le, int) or isinstance(ls, bool) \
+                or isinstance(le, bool):
+            erro("evidence.observation: line_start/line_end devem ser inteiros")
+        elif ls < 1 or le < ls:
+            erro(f"evidence.observation: faixa invalida ({ls}..{le}); "
+                 f"exige 1 <= line_start <= line_end")
+        else:
+            n = linhas_do_blob(raiz, bs)
+            if n is None:
+                erro(f"nao foi possivel ler o conteudo do blob {bs[:12]}... - faixa NAO VERIFICADA")
+            elif le > n:
+                erro(f"evidence.observation: line_end={le} passa do fim do conteudo ancorado "
+                     f"({n} linhas)")
+    return e
+
+
+RE_RUN_ID = re.compile(r"^[0-9]{1,20}$")
+_CACHE_WF = {}
+
+
+def workflows_no_commit(raiz, commit):
+    """Nomes de workflow declarados NAQUELE snapshot. None = indecidivel.
+
+    POR QUE ISTO EXISTE (revisao independente do PR #5). `ci.workflow` era escrito mas nao
+    validado: `workflow: workflow-que-nunca-existiu` passava. Campo com aparencia de rastro e
+    sem poder de discriminacao e a versao menor do defeito que este ledger inteiro persegue.
+
+    O nome e resolvido contra o SNAPSHOT, e nao contra o worktree, porque o workflow pode ter
+    sido renomeado depois - e foi: `verify` virou `verify-pr`/`verify-push` em 8f7b543. Uma
+    claim sobre c3ffe52 cita corretamente `verify`, que existia la e nao existe hoje.
+    """
+    if commit in _CACHE_WF:
+        return _CACHE_WF[commit]
+    try:
+        r = subprocess.run(["git", "-C", raiz, "ls-tree", "-r", "--name-only", commit,
+                            ".github/workflows/"], capture_output=True, text=True, timeout=30)
+        if r.returncode != 0:
+            _CACHE_WF[commit] = None
+            return None
+        nomes = set()
+        for caminho in r.stdout.splitlines():
+            if not caminho.endswith((".yml", ".yaml")):
+                continue
+            g = subprocess.run(["git", "-C", raiz, "show", f"{commit}:{caminho}"],
+                               capture_output=True, text=True, timeout=30)
+            if g.returncode != 0:
+                continue
+            try:
+                doc = yaml.safe_load(g.stdout)
+            except yaml.YAMLError:
+                continue
+            if isinstance(doc, dict) and doc.get("name"):
+                nomes.add(str(doc["name"]))
+        _CACHE_WF[commit] = nomes
+        return nomes
+    except (OSError, subprocess.SubprocessError):
+        _CACHE_WF[commit] = None
+        return None
+
+
+def _valida_ci(ci, raiz, arquivo, sujeito=None):
+    """`ci_run` (v1) era a URL do WORKFLOW - a mesma para toda claim, e portanto sem poder de
+    identificacao: nao dizia QUAL execucao, sobre QUAL commit, com QUAL resultado. Uma referencia
+    que nao discrimina nada e decoracao com forma de rastro.
+
+    v2 exige `run_id` e `head_sha`. Nada aqui contata a rede; o que se confere e a FORMA e o que
+    e checavel offline - que `head_sha` seja um commit DESTE repositorio. O `conclusion` daquela
+    execucao permanece NAO VERIFICADO por este programa, e isso esta declarado no docstring.
+    """
+    e = []
+    def erro(msg):
+        e.append(f"{os.path.basename(arquivo)}: {msg}")
+
+    if not isinstance(ci, dict):
+        erro("evidence.ci deve ser um mapeamento com 'run_id' e 'head_sha' "
+             "(v1 usava 'ci_run', uma URL de workflow que nao identificava execucao alguma)")
+        return e
+    for campo in ("run_id", "head_sha"):
+        if not ci.get(campo):
+            erro(f"evidence.ci.{campo} ausente")
+    if e:
+        return e
+    if not RE_RUN_ID.match(str(ci["run_id"])):
+        erro(f"evidence.ci.run_id '{ci['run_id']}' nao e um identificador numerico de execucao")
+    hs = str(ci["head_sha"])
+    if not RE_SHA.match(hs):
+        erro(f"evidence.ci.head_sha '{hs}' nao e um SHA de 40 hex minusculos")
+    else:
+        ok = commit_existe(raiz, hs)
+        if ok is False:
+            erro(f"evidence.ci.head_sha '{hs[:12]}...' nao e um commit deste repositorio")
+
+    # `workflow` deixou de ser decorativo: e resolvido contra os workflows que existiam NO
+    # SNAPSHOT da claim. Resolver contra o worktree seria errado - `verify` existia em c3ffe52
+    # e nao existe hoje, e as claims daquele snapshot o citam corretamente.
+    wf = ci.get("workflow")
+    if not wf:
+        erro("evidence.ci.workflow ausente - sem ele nao se sabe QUAL verificacao rodou")
+    elif sujeito:
+        nomes = workflows_no_commit(raiz, sujeito)
+        if nomes is None:
+            erro("nao foi possivel ler os workflows do snapshot - "
+                 "evidence.ci.workflow NAO VERIFICADO")
+        elif str(wf) not in nomes:
+            erro(f"evidence.ci.workflow '{wf}' nao existe no snapshot declarado "
+                 f"({sujeito[:12]}...). Workflows la: {sorted(nomes) or 'nenhum'}")
+    return e
 
 
 def valida(doc, arquivo, regressoes, mutantes, raiz, vistos):
@@ -199,30 +437,52 @@ def valida(doc, arquivo, regressoes, mutantes, raiz, vistos):
 
     escopo = doc.get("scope") or {}
     snap = None
-    if not isinstance(escopo, dict) or not escopo.get("commit"):
-        erro("scope.commit ausente - uma alegacao sem snapshot nao e verificavel")
+    # `subject_snapshot` (v2) e o commit do ARTEFATO AVALIADO. O nome anterior, `commit`, nao
+    # dizia commit DE QUE, e a ambiguidade era substantiva: a evidencia de uma alegacao pode ser
+    # registrada depois do artefato que ela avalia, e o campo unico forcava os dois a coincidir.
+    if not isinstance(escopo, dict) or not escopo.get("subject_snapshot"):
+        erro("scope.subject_snapshot ausente - uma alegacao sem snapshot nao e verificavel")
     else:
-        ok = commit_existe(raiz, str(escopo["commit"]))
-        if ok is False:
-            erro(f"scope.commit '{escopo['commit']}' nao existe neste repositorio")
-        elif ok is True and RE_SHA.match(str(escopo["commit"])):
-            # A EVIDENCIA E RESOLVIDA CONTRA O SNAPSHOT DECLARADO, nao contra o worktree.
-            # `RE_SHA` ja validou a forma antes de qualquer chamada ao git.
-            snap = inventario_no_commit(raiz, str(escopo["commit"]))
-            if snap is None:
-                erro("nao foi possivel ler o snapshot de scope.commit - "
-                     "evidencia NAO VERIFICADA contra ele")
-            else:
-                regressoes, mutantes = snap
-        elif ok is None:
-            # ASSIMETRIA CORRIGIDA: `pyyaml` ausente ja saia 2 (NAO VERIFICADO), mas `git`
-            # ausente devolvia None e o programa seguia imprimindo "ledger valido". Duas
-            # dependencias de oraculo, dois tratamentos - e o silencioso era justamente o que
-            # deixava TODO `scope.commit` sem resolucao enquanto o texto afirmava resolucao.
-            erro("git indisponivel: scope.commit NAO VERIFICADO "
-                 "(dependencia de oraculo ausente, nao aprovacao)")
+        sujeito = str(escopo["subject_snapshot"])
+        if not RE_SHA.match(sujeito):
+            erro(f"scope.subject_snapshot '{sujeito}' nao e um SHA de 40 hex minusculos "
+                 f"(prefixo curto e ambiguo por construcao)")
+        else:
+            ok = commit_existe(raiz, sujeito)
+            if ok is False:
+                erro(f"scope.subject_snapshot '{sujeito}' nao existe neste repositorio")
+            elif ok is True:
+                # A EVIDENCIA DE SUITE E RESOLVIDA CONTRA O SNAPSHOT DECLARADO, nao contra o
+                # worktree. `RE_SHA` ja validou a forma antes de qualquer chamada ao git.
+                snap = inventario_no_commit(raiz, sujeito)
+                if snap is None:
+                    erro("nao foi possivel ler o snapshot de scope.subject_snapshot - "
+                         "evidencia NAO VERIFICADA contra ele")
+                else:
+                    regressoes, mutantes = snap
+            elif ok is None:
+                # ASSIMETRIA CORRIGIDA: `pyyaml` ausente ja saia 2 (NAO VERIFICADO), mas `git`
+                # ausente devolvia None e o programa seguia imprimindo "ledger valido". Duas
+                # dependencias de oraculo, dois tratamentos - e o silencioso era justamente o que
+                # deixava TODO o snapshot sem resolucao enquanto o texto afirmava resolucao.
+                erro("git indisponivel: scope.subject_snapshot NAO VERIFICADO "
+                     "(dependencia de oraculo ausente, nao aprovacao)")
     if not escopo.get("platforms"):
         erro("scope.platforms ausente - alegacao sem dominio testado nao tem alcance definido")
+
+    # `runtime` (v2, opcional): a VERSAO do sistema observado, quando a alegacao e sobre o
+    # comportamento de um programa e nao sobre o repositorio. Existe porque C-015 declarava
+    # `github-ubuntu-24.04` no escopo enquanto a precedencia de hooks foi medida contra um
+    # Claude Code LOCAL - o runner de CI valida o repositorio, nao reproduz o runtime. Sem um
+    # campo para a versao, essa informacao so cabia na prosa, e prosa nao e resolvida.
+    rt = escopo.get("runtime")
+    if rt is not None:
+        if not isinstance(rt, dict) or not rt:
+            erro("scope.runtime deve ser um mapeamento nao vazio (ex.: {claude_code: 2.1.220})")
+        else:
+            for k, v in rt.items():
+                if v in (None, "", [], {}):
+                    erro(f"scope.runtime.{k} vazio - versao nao declarada nao e versao")
 
     ev = doc.get("evidence") or {}
     if not isinstance(ev, dict):
@@ -248,8 +508,11 @@ def valida(doc, arquivo, regressoes, mutantes, raiz, vistos):
 
     obs = ev.get("observation")
     if obs is not None:
-        if not isinstance(obs, dict) or not obs.get("recorded") or not obs.get("command"):
-            erro("evidence.observation exige 'command' e 'recorded'")
+        faltando = [k for k in ("command", "recorded", "blob_sha") if not obs.get(k)] \
+            if isinstance(obs, dict) else ["command", "recorded", "blob_sha"]
+        if faltando:
+            erro(f"evidence.observation exige {faltando} "
+                 f"(v2: 'blob_sha' ancora o CONTEUDO, nao so o nome do arquivo)")
         else:
             refs += 1
             rec = str(obs["recorded"])
@@ -270,14 +533,13 @@ def valida(doc, arquivo, regressoes, mutantes, raiz, vistos):
                 elif not os.path.isfile(alvo):
                     erro(f"evidence.observation.recorded aponta para arquivo inexistente: "
                          f"'{rec}'")
-                elif snap is not None and isinstance(escopo, dict) and escopo.get("commit"):
-                    # Existir no worktree NAO basta: a claim declara um snapshot, e o lastro
-                    # tem de existir NELE. Medido: C-015 e C-016 citavam observacoes que nao
-                    # existiam no commit que declaravam.
-                    v = existe_no_commit(raiz, str(escopo["commit"]), rec)
-                    if v is False:
-                        erro(f"evidence.observation.recorded existe no worktree mas NAO no "
-                             f"snapshot declarado ({escopo['commit']}): '{rec}'")
+                else:
+                    e.extend(_valida_blob(doc, obs, rec, raiz, arquivo))
+
+    ci = ev.get("ci")
+    if ci is not None:
+        e.extend(_valida_ci(ci, raiz, arquivo,
+                            str(escopo.get("subject_snapshot") or "") if isinstance(escopo, dict) else ""))
 
     if refs == 0:
         erro("nenhuma referencia de evidencia (regression, mutants ou observation). "
@@ -334,14 +596,20 @@ def main(argv):
         erros.extend(valida(doc, caminho, regressoes, mutantes, raiz, vistos))
 
     print(f"inventario do worktree: {len(regressoes)} regressoes, {len(mutantes)} mutantes "
-          f"(cada claim e resolvida contra o SEU scope.commit, nao contra este)")
+          f"(cada claim e resolvida contra o SEU scope.subject_snapshot, nao contra este)")
     print(f"claims lidas: {len(arquivos)}")
     if erros:
         print(f"\nVIOLACOES ({len(erros)}):")
         for x in erros:
             print(f"  - {x}")
         return EXIT_VIOLACAO
-    print("ledger valido: toda evidencia citada existe no SNAPSHOT que cada claim declara")
+    # A FRASE E O RELATORIO. Duas versoes anteriores imprimiram uma afirmacao mais forte do que
+    # o programa verificava - "existe em tests/" quando resolvia contra o worktree, e depois
+    # "existe no SNAPSHOT" quando conferia o nome do arquivo e nao o conteudo. Esta enumera
+    # exatamente o que foi conferido, e o que nao foi fica no docstring.
+    print("ledger valido: evidencia de suite resolvida contra o subject_snapshot de cada claim; "
+          "conteudo de observacao ancorado por blob_sha; ci.head_sha e commit deste repositorio.")
+    print("NAO verificado aqui: o resultado das execucoes de CI citadas (exigiria rede).")
     return EXIT_OK
 
 

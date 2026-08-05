@@ -1,0 +1,38 @@
+# TEMPORARIO: exporta o snapshot exato, historico Git e o oraculo ruff pinado para reproducao local.
+# Removido antes do merge; actions pinadas por SHA completo para nao abrir excecao no gate.
+name: export-source
+on:
+  pull_request:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  export-source:
+    name: export-source
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with: { fetch-depth: 0 }
+      - name: empacota snapshot, historico e oraculo pinado
+        run: |
+          set -euo pipefail
+          python3 -m pip install --quiet 'ruff==0.15.5'
+          cp "$(command -v ruff)" "$RUNNER_TEMP/ruff"
+          chmod 0555 "$RUNNER_TEMP/ruff"
+          git bundle create "$RUNNER_TEMP/evidence-gate.bundle" --all
+          tar --exclude=.git -czf "$RUNNER_TEMP/evidence-gate-source.tgz" .
+          sha256sum "$RUNNER_TEMP/evidence-gate.bundle" "$RUNNER_TEMP/evidence-gate-source.tgz" \
+            "$RUNNER_TEMP/ruff" > "$RUNNER_TEMP/SHA256SUMS"
+          "$RUNNER_TEMP/ruff" --version
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: evidence-gate-repro-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/evidence-gate.bundle
+            ${{ runner.temp }}/evidence-gate-source.tgz
+            ${{ runner.temp }}/ruff
+            ${{ runner.temp }}/SHA256SUMS
+          if-no-files-found: error
+          retention-days: 1

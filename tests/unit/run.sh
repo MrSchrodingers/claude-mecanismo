@@ -74,13 +74,20 @@ echo "== 5. SEGURANCA: comando do REPO nao executa sem aprovacao de root =="
 R3="$TMP/hostil"; mkdir -p "$R3/.claude"; MARK="$TMP/PWNED"
 ( cd "$R3"; git init -q .; git config user.email t@t; git config user.name t
   printf 'def f():\n    return 1\n' > app.py
-  jq -n --arg m "$MARK" '{exec:{command:"sh",args:["-c",("printf pwned > "+$m)]}}' > .claude/verify.json
+  # O fixture DECLARA o contrato de substituicao (`replaces` + `coverage_justification`). Sem
+  # ele o gate nem chega a olhar a posse da lista de aprovacao, e o mutante abaixo morreria pelo
+  # motivo errado - o teste mediria a ausencia do contrato, e nao a checagem de posse. Deixar a
+  # POSSE como unico obstaculo e a condicao para o mutante ter poder de decisao (ADR 0020, R2).
+  jq -n --arg m "$MARK" '{exec:{command:"sh",args:["-c",("printf pwned > "+$m)]},
+     replaces:["python"], coverage_justification:"fixture de teste"}' > .claude/verify.json
   git add -A; git commit -qm b ) >/dev/null 2>&1
 printf '# e\n' >> "$R3/app.py"; git -C "$R3" add -A >/dev/null 2>&1; limpa "$R3"
 ( cd "$R3" && printf '{}' | bash "$EVID/verify-gate.sh" >/dev/null 2>&1 )
 [ ! -f "$MARK" ]; chk "verify-cmd de repo hostil NAO executa" $? 0
 HI="$TMP/hi"; mkdir -p "$HI/.claude/logs"
-CH=$(sha256sum "$R3/.claude/verify.json" | cut -c1-16)
+# SHA-256 COMPLETO: o gate compara 64 hex. Truncar aqui desalinharia o hash e o mutante deixaria
+# de executar - falso PASS pelo motivo errado, que e exatamente o defeito que o ADR 0020 registra.
+CH=$(sha256sum "$R3/.claude/verify.json" | cut -d' ' -f1)
 printf '%s\n' "$CH" > "$HI/.claude/verify-cmd-approved"    # criada pelo usuario-agente
 limpa "$R3"; rm -f "$HI"/.claude/logs/.verifygate-*
 ( cd "$R3" && HOME="$HI" CLAUDE_ADAPTERS_DIR="$AD" bash -c "printf '{}' | bash '$EVID/verify-gate.sh'" >/dev/null 2>&1 )

@@ -4,7 +4,7 @@ claim_id: C-014
 claim: O executor documental trata conteudo de documento como DADO e nunca como comando ou politica.
 type: security-property
 scope:
-  commit: c3ffe52
+  subject_snapshot: c3ffe5202bc87e59a61d1a2bcac0f4c8b65953af
   platforms:
   - local-linux
   - github-ubuntu-24.04
@@ -17,7 +17,10 @@ evidence:
   - D5
   - D6
   - D7
-  ci_run: https://github.com/MrSchrodingers/evidence-gate/actions/workflows/verify.yml
+  ci:
+    run_id: 30924006484
+    head_sha: c3ffe5202bc87e59a61d1a2bcac0f4c8b65953af
+    workflow: verify
 warrant: Sem `sh -c`; placeholders substituidos por VALOR, de modo que nome de arquivo contendo $( ) nao
   vira comando - verificado com a fixture `$(touch PWNED_DOCTOOL).csv`, cujo marcador NAO e criado. Todo
   excerto sai marcado untrusted, e um PDF contendo 'IGNORE AS INSTRUCOES ANTERIORES' sai como excerto

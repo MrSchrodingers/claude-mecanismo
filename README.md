@@ -2,7 +2,7 @@
 
 > **Harness experimental para Claude Code orientado por evidência, falsificabilidade e fronteiras explícitas de autoridade.**
 
-[![verify](https://github.com/MrSchrodingers/evidence-gate/actions/workflows/verify.yml/badge.svg)](https://github.com/MrSchrodingers/evidence-gate/actions/workflows/verify.yml)
+[![verify-pr](https://github.com/MrSchrodingers/evidence-gate/actions/workflows/verify-pr.yml/badge.svg)](https://github.com/MrSchrodingers/evidence-gate/actions/workflows/verify-pr.yml)
 
 ## Resumo
 
@@ -202,7 +202,42 @@ policy \in writable(actor) \Rightarrow policy \text{ não é fronteira contra es
 
 ### 4.2 Estado atual
 
-A política ainda é `governed=user`. Isso significa que o projeto possui um harness robusto, mas não uma raiz de confiança completa.
+A política ativa ainda é `governed=user`: os hooks que rodam vivem em `~/.claude`, gravável pelo
+ator. O que existe, e o que não existe, precisa ser dito com precisão — porque tanto declarar
+demais quanto declarar de menos deixam o leitor sem saber o que falta:
+
+- **existe**: `install/apply-managed.sh`, instalador root-owned que constrói a árvore em uma
+  área de staging, aplica posse e modo lá, roda **todos** os portões contra o staging, gera e
+  valida a política **antes** de tocar qualquer coisa ativa, e só então executa uma fase de
+  commit composta apenas de renames verificados. O estado ativo é o par
+  (árvore em `/opt/evidence-gate`, política em `managed-settings.json`), e falha **observada**
+  em qualquer ponto devolve os dois (MG15, MG17, MG18; mutantes MI2 e MI3).
+
+  A primeira versão desta correção publicava `DeployFail ⇒ ActiveState inalterado` mas entregava
+  só `GateFail_{pré-publicação} ⇒ árvore inalterada`: a árvore era publicada e a anterior
+  apagada **antes** de a política ser gerada, com `jq`, `cp`, `chmod` e `chown` sem retorno
+  verificado num script sem `set -e`. Uma revisão independente encontrou o buraco; `MG17` o
+  reproduz por injeção determinística (`MANAGED_FAILPOINT`) e `MI3` é o mutante atribuível.
+
+  **O que continua fora**: terminação que o shell não observa. `rename(2)` não substitui
+  diretório não vazio, então a troca da árvore são duas chamadas; `SIGKILL` ou queda entre elas
+  deixa `/opt/evidence-gate` ausente. Isso é disponibilidade, não árvore meio-escrita, e não há
+  rollback possível de dentro de um processo morto. Fechar exigiria o caminho ativo ser um
+  symlink trocado por um único rename — muda o layout, o `--verify` e o `--revert`;
+- **não existe**: a **ativação**. `allowManagedHooksOnly` exige `sudo` e não foi ligado;
+- **não existe**: o fechamento da cadeia. Duas dependências continuam no espaço do ator — o
+  próprio checkout de onde `apply-managed.sh` é invocado (um script que o ator pode editar antes
+  do `sudo`), e `EVIDENCE_GATE_REPO`, que o hook managed de `SessionStart` usa para localizar
+  `install/verify.sh`. Um hook root-owned que invoca um verificador vindo do espaço do ator não
+  é raiz de confiança:
+
+\[
+Hook_{root} + Verifier_{ator} \neq TrustRoot.
+\]
+
+Fechar isso exige um bootstrap mínimo e pinado (release com digest conferido, extração em
+staging root-owned, rename atômico) e uma verificação managed que rode a partir de `/opt`, sem
+voltar ao checkout. Não está implementado.
 
 ### 4.3 Fase de raiz gerenciada
 
@@ -653,6 +688,7 @@ suíte legada
 bash tests/unit/supply-chain.sh
 bash tests/unit/document-tools.sh
 bash tests/unit/reprodutibilidade.sh
+bash tests/unit/fronteira-externa.sh
 bash tests/unit/managed.sh
 bash tests/unit/propriedades.sh
 bash tests/unit/claims.sh
@@ -661,6 +697,7 @@ bash tests/unit/regressao-gate.sh
 bash tests/mutation/run.sh
 bash tests/mutation/contrato.sh
 bash tests/mutation/install.sh
+bash tests/mutation/fronteira.sh
 bash tests/unit/run.sh
 bash scripts/status.sh --check
 bash install/verify.sh
@@ -766,27 +803,44 @@ Para cada defeito ou proposta:
 7. executar em ambiente distinto;
 8. registrar escopo e limitações.
 
-Um registro futuro de claims terá a forma:
+O registro de claims **existe** — `evidence/claims/`, 16 alegações, validadas por
+`evidence/validate-claims.py` e exercitadas por `tests/unit/claims.sh`. O schema é o v2:
 
 ```yaml
 claim_id: C-001
 claim: "Falha em cache nunca é reutilizada como sucesso."
 type: empirical-invariant
 scope:
-  commit: "<sha>"
+  subject_snapshot: "<sha de 40 hex>"   # o commit do ARTEFATO avaliado
   platforms: [local-linux, github-ubuntu-24.04]
+  runtime: {claude_code: 2.1.220}       # opcional: versão do sistema observado
 evidence:
-  regression: [G1]
+  regression: [G1]                      # resolvido contra o subject_snapshot
   mutants: [M1]
-warrant:
-  - "O mutante que remove a distinção fail/pass é morto por G1."
-counterexamples:
-  - commit: "estado anterior"
-    result: refuted
+  observation:                          # quando o lastro é uma medição registrada
+    command: "..."
+    recorded: evidence/observations/<arquivo>.md
+    blob_sha: "<sha de 40 hex do CONTEÚDO>"
+    line_start: 48
+    line_end: 76
+  ci: {run_id: 30924006484, head_sha: "<sha de 40 hex>", workflow: verify-pr}
+warrant: "O mutante que remove a distinção fail/pass é morto por G1."
 limitations:
   - "Não é prova universal."
 status: supported-in-tested-domain
 ```
+
+**Por que `blob_sha`, e não `(caminho, commit)`.** O v1 ancorava a evidência no *nome* do
+arquivo dentro de um snapshot, e conferia `git cat-file -e <commit>:<caminho>` — que o arquivo
+existia. Uma auditoria externa encontrou o furo em C-016: o arquivo existia no snapshot
+declarado, o **conteúdo citado** não; ele fora ampliado depois, e o validador aprovava. Um nome
+pode passar a designar outro conteúdo; um endereço content-addressed não pode. Reproduzido em
+`tests/unit/claims.sh`, caso L13, com controle positivo ao lado.
+
+Não existe campo `claim_revision`: o SHA do commit que *contém* a claim não existe enquanto ela
+está sendo escrita, e um campo auto-declarado seria mais fraco que `git log --follow` sobre o
+próprio arquivo. É também por isso que a evidência ancora em blob e não em commit — o blob é
+calculável antes do commit.
 
 ---
 
@@ -894,10 +948,11 @@ M3 é composto, e tratá-lo como um único bit esconderia exatamente o que falta
 
 | Componente de M3 | Estado | Base |
 |---|---|---|
-| enforcement na fronteira externa | **atingido** | push do admin recusado (GH013), medido |
+| enforcement na fronteira externa | **atingido** | push do admin recusado (GH013), medido; contexto exigido é único desde a separação `verify-pr`/`verify-push` |
 | runtime confirmado | **atingido** | precedência de hooks medida; bloqueio E2E de `PreToolUse` e `SubagentStop` observado contra o binário |
-| managed policy | **construído, não ativado** | instalador com 23 asserções contra prefixo de ensaio; `allowManagedHooksOnly` exige `sudo` e não foi ativado |
+| managed policy | **construído, não ativado** | instalador com 53 asserções contra prefixo de ensaio, deploy em staging com publicação após os portões; `allowManagedHooksOnly` exige `sudo` e não foi ativado |
 | sandbox | **não iniciado** | parsers de documento seguem com a autoridade do usuário |
+| cadeia local fora do ator | **não atingido** | o hook managed de `SessionStart` usa `EVIDENCE_GATE_REPO`, que aponta para o checkout — gravável pelo ator. Hook root-owned invocando verificador do espaço do ator não é raiz de confiança |
 
 Classificação atual:
 
@@ -920,7 +975,8 @@ Classificação atual:
 
 ### P1 — enforcement — **fechado e medido**
 
-- required status check `verify`;
+- required status check `verify-pr` (contexto único; `verify-push` roda a mesma verificação
+  em `push` e **não** deve ser exigido);
 - ruleset com `bypass_actors` vazio;
 - `strict_required_status_checks_policy`, exigindo a branch atualizada com a base.
 
@@ -940,10 +996,16 @@ git push origin <branch>:main    # precisa ser recusado com GH013
 
 ### P3 — hardening
 
-- base para commits sem upstream;
-- sandbox;
-- container por digest;
-- property-based testing.
+- sandbox (**a maior lacuna aberta**: parsers de documento rodam com a
+  autoridade do usuário);
+- container por digest e lock de dependências com hashes;
+- CI executa cada suíte UMA vez, com o status agregado a partir de artifacts em vez de
+  reexecutar o experimento inteiro;
+- digest transitivo dos bytes que `.claude/verify.json` manda executar.
+
+Os itens *base para commits sem upstream* e *property-based testing* estavam repetidos aqui
+depois de P0 já os declarar fechados — duas cópias da mesma verdade, que é o defeito que este
+repositório persegue. Removidos daqui; permanecem em P0, com a evidência.
 
 ### P4 — ciência de eficácia
 
@@ -972,7 +1034,7 @@ evidence/     gate, ledger e telemetria
 install/      manifesto, apply, verify e lock de gerenciados
 scripts/      geração e validação do status documental
 tests/unit/   regressão, metamorfismo, supply-chain e legado
-tests/mutation/ mutation testing do gate e instalador
+tests/mutation/ mutation testing do gate, instalador e fronteira externa
 docs/adr/     decisões, contraexemplos e limites
 .github/      verificação remota
 ```
@@ -1016,7 +1078,7 @@ docs/adr/     decisões, contraexemplos e limites
 ## 21. Limites declarados
 
 - a política ainda é gravável pelo ator — `install/apply-managed.sh` existe e foi exercitado
-  contra prefixo de ensaio (23 asserções), mas `allowManagedHooksOnly` **não foi ativado**:
+  contra prefixo de ensaio (53 asserções), mas `allowManagedHooksOnly` **não foi ativado**:
   exige `sudo` com senha. Que o runtime honre a flag é, hoje, **não verificado**;
 - o ambiente é auditável, não hermético;
 - comandos do repositório ainda exigem sandbox real. Esta é a lacuna aberta mais relevante, e

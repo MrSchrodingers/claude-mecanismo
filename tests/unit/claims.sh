@@ -10,6 +10,17 @@
 #   L9  - dependencia de ORACULO ausente (pyyaml) -> exit 2, NAO VERIFICADO;
 #   L10 - a EXTRACAO do inventario quebra e devolve vazio. Sem a autochecagem isso reprovaria
 #         tudo (falso vermelho) ou, com regex frouxa demais, aprovaria tudo (falso verde).
+#
+# L13 a L17 sao o SCHEMA v2, e existem por um defeito que a auditoria externa encontrou: o
+# validador ancorava a evidencia em (caminho, commit) - um NOME - e um nome pode passar a
+# designar outro conteudo. L13 reproduz o caso real (C-016), e os demais fecham as saidas:
+#   L13 - blob_sha que nao casa com o conteudo atual REPROVA;
+#   L14 - omitir blob_sha nao volta ao comportamento v1 em silencio;
+#   L15 - faixa de linhas e validada contra o conteudo ANCORADO, nao contra o arquivo atual;
+#   L16 - prefixo curto de SHA reprova (identidade ambigua nao ancora);
+#   L17 - `ci` exige execucao identificavel, e nao a URL do workflow, igual em toda claim.
+# Cada um vem com o CONTROLE POSITIVO ao lado: sem ele, um validador que reprovasse tudo
+# passaria em todos os negativos.
 set -uo pipefail
 cd "$(dirname "$0")/../.." || exit 1
 # LOCK: suites deste repo nao sao reentrantes entre si (tests/lib/lock.sh).
@@ -27,7 +38,12 @@ if ! python3 -c "import yaml" >/dev/null 2>&1; then
 fi
 
 T="$(mktemp -d)"; trap 'rm -rf "$T"' EXIT
-SHA="$(git -C "$REPO" rev-parse HEAD 2>/dev/null || echo 0000000)"
+# SHA COMPLETO: o schema v2 recusa prefixo. `rev-parse HEAD` ja devolve 40 hex; o fallback
+# tambem tem de ter 40, senao o fixture reprovaria por FORMA e os casos mediriam outra coisa.
+SHA="$(git -C "$REPO" rev-parse HEAD 2>/dev/null || echo 0000000000000000000000000000000000000000)"
+# Um commit real deste repositorio para `ci.head_sha`. O validador confere offline que o
+# head_sha citado e commit daqui; usar um valor inventado faria todo fixture reprovar por ci.
+CI_SHA="$SHA"
 
 # Molde de claim VALIDA. Cada caso negativo altera UM campo, para que a reprovacao seja
 # atribuivel aquele campo e nao a um documento genericamente malformado.
@@ -36,11 +52,14 @@ claim_id: $1
 claim: "alegacao de teste"
 type: empirical-invariant
 scope:
-  commit: "${3:-$SHA}"
+  subject_snapshot: "${3:-$SHA}"
   platforms: [local-linux]
 evidence:
   regression: [${2:-G1}]
-  ci_run: "http://exemplo.invalido"
+  ci:
+    run_id: 30924006484
+    head_sha: "$CI_SHA"
+    workflow: verify-pr
 warrant: "molde de teste"
 limitations: ["fixture"]
 status: supported-in-tested-domain
@@ -69,8 +88,8 @@ mut_fixture(){ # $1=destino  $2=id de mutante
 python3 - "$1" "$2" "$SHA" <<'PY'
 import sys, yaml
 d = {"claim_id":"C-001","claim":"alegacao de teste","type":"empirical-invariant",
-     "scope":{"commit":sys.argv[3],"platforms":["local-linux"]},
-     "evidence":{"regression":["G1"],"mutants":[sys.argv[2]],"ci_run":"http://exemplo.invalido"},
+     "scope":{"subject_snapshot":sys.argv[3],"platforms":["local-linux"]},
+     "evidence":{"regression":["G1"],"mutants":[sys.argv[2]],"ci":{"run_id":30924006484,"head_sha":sys.argv[-1],"workflow":"verify-pr"}},
      "warrant":"molde de teste","limitations":["fixture"],
      "status":"supported-in-tested-domain"}
 yaml.safe_dump(d, open(sys.argv[1],"w"), allow_unicode=True, sort_keys=False)
@@ -88,14 +107,14 @@ D="$T/l4"; mkdir -p "$D"
 python3 - "$D/C-001.yaml" "$SHA" <<'PY'
 import sys, yaml
 d = {"claim_id":"C-001","claim":"sem lastro","type":"empirical-invariant",
-     "scope":{"commit":sys.argv[2],"platforms":["local-linux"]},
-     "evidence":{"ci_run":"http://exemplo.invalido"},
+     "scope":{"subject_snapshot":sys.argv[2],"platforms":["local-linux"]},
+     "evidence":{"ci":{"run_id":30924006484,"head_sha":sys.argv[-1],"workflow":"verify-pr"}},
      "warrant":"nenhum","limitations":["fixture"],"status":"supported-in-tested-domain"}
 yaml.safe_dump(d, open(sys.argv[1],"w"), allow_unicode=True, sort_keys=False)
 PY
 chk "sem regression, mutants nem observation -> reprova" "$(val "$D")" 1
 
-echo "== L5. scope.commit inexistente reprova =="
+echo "== L5. scope.subject_snapshot inexistente reprova =="
 D="$T/l5"; mkdir -p "$D"; molde C-001 G1 "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef" > "$D/C-001.yaml"
 chk "commit que nao existe no repo -> reprova" "$(val "$D")" 1
 D="$T/l5b"; mkdir -p "$D"; molde C-001 G1 "--upload-pack=touch /tmp/PWN_CLAIMS" > "$D/C-001.yaml"
@@ -108,9 +127,9 @@ D="$T/l6"; mkdir -p "$D"
 python3 - "$D/C-001.yaml" "$SHA" <<'PY'
 import sys, yaml
 d = {"claim_id":"C-001","claim":"observacao fantasma","type":"runtime-observation",
-     "scope":{"commit":sys.argv[2],"platforms":["local-linux"]},
+     "scope":{"subject_snapshot":sys.argv[2],"platforms":["local-linux"]},
      "evidence":{"observation":{"command":"echo","recorded":"evidence/observations/nao-existe.md"},
-                 "ci_run":"http://exemplo.invalido"},
+                 "ci":{"run_id":30924006484,"head_sha":sys.argv[-1],"workflow":"verify-pr"}},
      "warrant":"nenhum","limitations":["fixture"],"status":"supported-in-tested-domain"}
 yaml.safe_dump(d, open(sys.argv[1],"w"), allow_unicode=True, sort_keys=False)
 PY
@@ -125,8 +144,8 @@ D="$T/l8"; mkdir -p "$D"
 python3 - "$D/C-001.yaml" "$SHA" <<'PY'
 import sys, yaml
 d = {"claim_id":"C-001","claim":"sem limites","type":"empirical-invariant",
-     "scope":{"commit":sys.argv[2],"platforms":["local-linux"]},
-     "evidence":{"regression":["G1"],"ci_run":"http://exemplo.invalido"},
+     "scope":{"subject_snapshot":sys.argv[2],"platforms":["local-linux"]},
+     "evidence":{"regression":["G1"],"ci":{"run_id":30924006484,"head_sha":sys.argv[-1],"workflow":"verify-pr"}},
      "warrant":"nenhum","limitations":[],"status":"supported-in-tested-domain"}
 yaml.safe_dump(d, open(sys.argv[1],"w"), allow_unicode=True, sort_keys=False)
 PY
@@ -144,15 +163,23 @@ echo "== L11. observation com caminho ABSOLUTO ou '..' reprova =="
 # "ledger valido: toda evidencia citada existe em tests/" - frase literalmente falsa. O dano
 # nao e a travessia em si: e a alegacao passar a ter lastro FORA do repositorio enquanto o
 # programa afirma ter resolvido a evidencia contra a suite.
-obs_fixture(){ # $1=destino  $2=valor de recorded
-python3 - "$1" "$2" "$SHA" <<'PY2'
+# $1=destino  $2=recorded  $3=blob_sha (default: o blob REAL de $2)  $4/$5=faixa opcional
+obs_fixture(){
+  local blob="${3:-}"
+  [ -n "$blob" ] || blob="$(git -C "$REPO" hash-object -- "$REPO/$2" 2>/dev/null || echo \
+      0000000000000000000000000000000000000000)"
+python3 - "$1" "$2" "$blob" "${4:-}" "${5:-}" "$SHA" <<'PY2'
 import sys, yaml
+dest, rec, blob, ls, le, sha = sys.argv[1:7]
+obs = {"command": "echo", "recorded": rec, "blob_sha": blob}
+if ls:
+    obs["line_start"], obs["line_end"] = int(ls), int(le)
 d = {"claim_id":"C-001","claim":"lastro fora do repo","type":"runtime-observation",
-     "scope":{"commit":sys.argv[3],"platforms":["local-linux"]},
-     "evidence":{"observation":{"command":"echo","recorded":sys.argv[2]},
-                 "ci_run":"http://exemplo.invalido"},
+     "scope":{"subject_snapshot":sha,"platforms":["local-linux"]},
+     "evidence":{"observation":obs,
+                 "ci":{"run_id":30924006484,"head_sha":sha,"workflow":"verify-pr"}},
      "warrant":"fixture","limitations":["fixture"],"status":"supported-in-tested-domain"}
-yaml.safe_dump(d, open(sys.argv[1],"w"), allow_unicode=True, sort_keys=False)
+yaml.safe_dump(d, open(dest,"w"), allow_unicode=True, sort_keys=False)
 PY2
 }
 D="$T/l11"; mkdir -p "$D"; obs_fixture "$D/C-001.yaml" "/etc/passwd"
@@ -162,6 +189,126 @@ chk "  recorded com '..' reprova" "$(val "$D")" 1
 # CONTROLE: sem ele, um validador que reprovasse toda observation passaria nos dois acima.
 D="$T/l11c"; mkdir -p "$D"; obs_fixture "$D/C-001.yaml" "docs/HANDOFF.md"
 chk "  e um caminho relativo VALIDO dentro do repo passa" "$(val "$D")" 0
+
+echo "== L13. blob_sha que NAO casa com o conteudo atual reprova (o defeito de C-016) =="
+# ESTE E O CASO QUE A AUDITORIA EXTERNA COMPROU. Reproducao do defeito real, nao de um sintoma:
+# C-016 declarava `scope.commit: c3ffe52` e seu warrant descrevia DOIS controles de push; no
+# snapshot c3ffe52 a observacao citada continha apenas o primeiro.
+#     $ git show c3ffe52:evidence/observations/...fronteira-externa... | grep -c 'Adendo\|MERGED'
+#     0
+# O validador v1 conferia `cat-file -e <commit>:<caminho>` - que o ARQUIVO existia. Existia. O
+# CONTEUDO citado, nao. Ancorar em (caminho, commit) endereca um NOME, e um nome pode passar a
+# designar outro conteudo. Ancorar em blob endereca o CONTEUDO, e nao pode.
+ALVO="evidence/observations/2026-08-04-fronteira-externa-e-contrato-no-runtime.md"
+BLOB_ANTIGO="$(git -C "$REPO" rev-parse "c3ffe52:$ALVO" 2>/dev/null || echo '')"
+BLOB_ATUAL="$(git -C "$REPO" hash-object -- "$REPO/$ALVO" 2>/dev/null || echo '')"
+if [ -z "$BLOB_ANTIGO" ] || [ -z "$BLOB_ATUAL" ]; then
+  echo "  SKIP  snapshot c3ffe52 indisponivel - o caso nao pode ser exercitado"
+else
+  # PRECONDICAO EXPLICITA: se os dois blobs fossem iguais, o caso mediria zero e ficaria verde.
+  chk "o conteudo de ENTAO difere do conteudo de HOJE (senao o caso e vacuo)" \
+      "$([ "$BLOB_ANTIGO" != "$BLOB_ATUAL" ] && echo sim || echo nao)" "sim"
+  D="$T/l13"; mkdir -p "$D"; obs_fixture "$D/C-001.yaml" "$ALVO" "$BLOB_ANTIGO"
+  chk "  ancorada no conteudo de ENTAO -> reprova" "$(val "$D")" 1
+  D="$T/l13b"; mkdir -p "$D"; obs_fixture "$D/C-001.yaml" "$ALVO" "$BLOB_ATUAL"
+  chk "  a MESMA claim ancorada no conteudo ATUAL passa (o campo decide)" "$(val "$D")" 0
+fi
+
+echo "== L14. observation SEM blob_sha reprova - o nome do arquivo nao e ancora =="
+# Sem este caso, bastaria omitir o campo para voltar ao comportamento v1 sem nenhum sinal.
+D="$T/l14"; mkdir -p "$D"
+python3 - "$D/C-001.yaml" "$SHA" <<'PY'
+import sys, yaml
+d = {"claim_id":"C-001","claim":"sem ancora de conteudo","type":"runtime-observation",
+     "scope":{"subject_snapshot":sys.argv[2],"platforms":["local-linux"]},
+     "evidence":{"observation":{"command":"echo","recorded":"docs/HANDOFF.md"},
+                 "ci":{"run_id":30924006484,"head_sha":sys.argv[2],"workflow":"verify-pr"}},
+     "warrant":"fixture","limitations":["fixture"],"status":"supported-in-tested-domain"}
+yaml.safe_dump(d, open(sys.argv[1],"w"), allow_unicode=True, sort_keys=False)
+PY
+chk "observation sem blob_sha -> reprova" "$(val "$D")" 1
+
+echo "== L15. faixa de linhas fora do conteudo ancorado reprova =="
+# Citar a linha 99999 de um arquivo de 200 linhas e uma citacao que nao resolve. O oraculo e o
+# conteudo ANCORADO (o blob), nao o arquivo atual - senao a faixa passaria a ser validada contra
+# um conteudo diferente daquele que a claim cita.
+NLINHAS="$(git -C "$REPO" cat-file blob "$(git -C "$REPO" hash-object -- "$REPO/docs/HANDOFF.md")" | wc -l)"
+D="$T/l15"; mkdir -p "$D"; obs_fixture "$D/C-001.yaml" "docs/HANDOFF.md" "" 1 "$((NLINHAS + 500))"
+chk "line_end alem do fim do conteudo -> reprova" "$(val "$D")" 1
+D="$T/l15b"; mkdir -p "$D"; obs_fixture "$D/C-001.yaml" "docs/HANDOFF.md" "" 1 "$NLINHAS"
+chk "  a MESMA faixa dentro do conteudo passa" "$(val "$D")" 0
+D="$T/l15c"; mkdir -p "$D"; obs_fixture "$D/C-001.yaml" "docs/HANDOFF.md" "" 9 3
+chk "  faixa invertida (start > end) reprova" "$(val "$D")" 1
+
+echo "== L16. SHA de prefixo curto reprova - identidade ambigua nao ancora =="
+# v1 aceitava de 7 a 40 hex e as 16 claims usavam 7. Prefixo colide por construcao, e a colisao
+# e o modo de falha silencioso: o objeto errado resolve e o validador aprova.
+CURTO="$(printf '%s' "$SHA" | cut -c1-7)"
+D="$T/l16"; mkdir -p "$D"; molde C-001 G1 "$CURTO" > "$D/C-001.yaml"
+chk "subject_snapshot com 7 hex -> reprova" "$(val "$D")" 1
+D="$T/l16b"; mkdir -p "$D"; molde C-001 G1 "$SHA" > "$D/C-001.yaml"
+chk "  o MESMO commit com 40 hex passa (o comprimento decide, nao o objeto)" "$(val "$D")" 0
+
+echo "== L17. evidence.ci exige execucao identificavel, nao URL de workflow =="
+# v1 tinha `ci_run: <URL do workflow>` - a MESMA string em toda claim, e portanto sem poder de
+# identificacao. Nao dizia qual execucao, sobre qual commit, com qual resultado.
+ci_fixture(){ # $1=destino  $2=run_id  $3=head_sha
+python3 - "$1" "$2" "$3" "$SHA" <<'PY3'
+import sys, yaml
+dest, run_id, head, sha = sys.argv[1:5]
+# `workflow` sempre presente e VALIDO: estes casos medem run_id e head_sha, e deixar o
+# workflow de fora faria a reprovacao ter duas causas e a atribuicao virar adivinhacao.
+ci = {"workflow": "verify-pr"}
+if run_id: ci["run_id"] = run_id
+if head: ci["head_sha"] = head
+d = {"claim_id":"C-001","claim":"ci","type":"empirical-invariant",
+     "scope":{"subject_snapshot":sha,"platforms":["local-linux"]},
+     "evidence":{"regression":["G1"],"ci":ci},
+     "warrant":"fixture","limitations":["fixture"],"status":"supported-in-tested-domain"}
+yaml.safe_dump(d, open(dest,"w"), allow_unicode=True, sort_keys=False)
+PY3
+}
+D="$T/l17"; mkdir -p "$D"; ci_fixture "$D/C-001.yaml" "30924006484" ""
+chk "ci sem head_sha -> reprova" "$(val "$D")" 1
+D="$T/l17b"; mkdir -p "$D"; ci_fixture "$D/C-001.yaml" "" "$SHA"
+chk "  ci sem run_id -> reprova" "$(val "$D")" 1
+D="$T/l17c"; mkdir -p "$D"
+ci_fixture "$D/C-001.yaml" "30924006484" "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
+chk "  head_sha que nao e commit deste repo -> reprova" "$(val "$D")" 1
+D="$T/l17d"; mkdir -p "$D"; ci_fixture "$D/C-001.yaml" "30924006484" "$SHA"
+chk "  run_id numerico + head_sha real passa" "$(val "$D")" 0
+
+echo "== L18. evidence.ci.workflow e resolvido contra o SNAPSHOT, nao e decorativo =="
+# Achado da revisao independente do PR #5: `workflow` era escrito e nunca validado - qualquer
+# string passava. Campo com aparencia de rastro e sem poder de discriminacao e a versao menor do
+# defeito que este ledger inteiro persegue.
+# RESOLVIDO CONTRA O SNAPSHOT, e nao contra o worktree: `verify` existia em c3ffe52 e nao existe
+# mais hoje (virou verify-pr/verify-push). As claims daquele snapshot o citam CORRETAMENTE.
+wf_fixture(){ # $1=destino  $2=nome do workflow  $3=subject_snapshot
+python3 - "$1" "$2" "$3" <<'PY4'
+import sys, yaml
+dest, wf, sha = sys.argv[1:4]
+d = {"claim_id":"C-001","claim":"workflow","type":"empirical-invariant",
+     "scope":{"subject_snapshot":sha,"platforms":["local-linux"]},
+     "evidence":{"regression":["G1"],
+                 "ci":{"run_id":30924006484,"head_sha":sha,"workflow":wf}},
+     "warrant":"fixture","limitations":["fixture"],"status":"supported-in-tested-domain"}
+yaml.safe_dump(d, open(dest,"w"), allow_unicode=True, sort_keys=False)
+PY4
+}
+ANTIGO="$(git -C "$REPO" rev-parse c3ffe52 2>/dev/null || echo '')"
+if [ -z "$ANTIGO" ]; then
+  echo "  SKIP  snapshot c3ffe52 indisponivel"
+else
+  D="$T/l18"; mkdir -p "$D"; wf_fixture "$D/C-001.yaml" "workflow-que-nunca-existiu" "$ANTIGO"
+  chk "workflow inexistente no snapshot -> reprova" "$(val "$D")" 1
+  D="$T/l18b"; mkdir -p "$D"; wf_fixture "$D/C-001.yaml" "verify" "$ANTIGO"
+  chk "  e 'verify', que existia NAQUELE snapshot, passa" "$(val "$D")" 0
+  # O CONTROLE QUE PROVA A RESOLUCAO POR SNAPSHOT: `verify-pr` existe HOJE e NAO existia em
+  # c3ffe52. Se o validador resolvesse contra o worktree, este caso passaria.
+  D="$T/l18c"; mkdir -p "$D"; wf_fixture "$D/C-001.yaml" "verify-pr" "$ANTIGO"
+  chk "  e 'verify-pr' (existe hoje, NAO existia la) reprova" "$(val "$D")" 1
+fi
 
 echo "== L10. inventario vazio e NAO VERIFICADO, nao ledger valido =="
 # Autochecagem: se o contrato de extracao deixar de casar com tests/, o validador precisa
@@ -200,7 +347,7 @@ import sys, yaml
 p, sha = sys.argv[1], sys.argv[2]
 raw = open(p).read()
 head = "\n".join(l for l in raw.split("\n") if l.startswith("#"))
-d = yaml.safe_load(raw); d["scope"]["commit"] = sha
+d = yaml.safe_load(raw); d["scope"]["subject_snapshot"] = sha
 open(p, "w").write(head + "\n")
 with open(p, "a") as fh:
     yaml.safe_dump(d, fh, allow_unicode=True, sort_keys=False, width=100)
@@ -210,7 +357,7 @@ fi
 
 echo
 echo "================ PASS=$P  FAIL=$F ================"
-EXPECTED=21
+EXPECTED=37
 if [ "$P" -ne "$EXPECTED" ]; then
   echo "CONTAGEM INESPERADA: PASS=$P, esperado $EXPECTED. Caso removido ou nao executado."
   exit 1

@@ -5,7 +5,7 @@ claim: Execucao concorrente das suites e DETECTADA e reprovada, em vez de produz
   e errado.
 type: empirical-invariant
 scope:
-  commit: c3ffe52
+  subject_snapshot: c3ffe5202bc87e59a61d1a2bcac0f4c8b65953af
   platforms:
   - local-linux
   - github-ubuntu-24.04
@@ -15,7 +15,10 @@ evidence:
   - C2
   - C3
   - C4
-  ci_run: https://github.com/MrSchrodingers/evidence-gate/actions/workflows/verify.yml
+  ci:
+    run_id: 30924006484
+    head_sha: c3ffe5202bc87e59a61d1a2bcac0f4c8b65953af
+    workflow: verify
 warrant: 'C1 exige que a segunda execucao concorrente saia 3 e nao execute o corpo; C2, que apos a liberacao
   volte ao normal; C3, que a re-entrancia por marca herdada nao trave o filho - sem ela o lock seria deadlock
   por desenho, ja que os runners de mutacao invocam as suites. C4 e o discriminador: prova que `env -u`

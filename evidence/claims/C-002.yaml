@@ -5,7 +5,7 @@ claim: O aviso do gate chega ao modelo por um canal que o runtime de fato entreg
   exit 0.
 type: empirical-invariant
 scope:
-  commit: c3ffe52
+  subject_snapshot: c3ffe5202bc87e59a61d1a2bcac0f4c8b65953af
   platforms:
   - local-linux
   - github-ubuntu-24.04
@@ -14,7 +14,10 @@ evidence:
   - G2
   mutants:
   - M2
-  ci_run: https://github.com/MrSchrodingers/evidence-gate/actions/workflows/verify.yml
+  ci:
+    run_id: 30924006484
+    head_sha: c3ffe5202bc87e59a61d1a2bcac0f4c8b65953af
+    workflow: verify
 warrant: G2 exige que o payload traga hookSpecificOutput.additionalContext e que declare NOT_VERIFIED.
   M2 troca o canal por stderr+exit 0 e G2 reprova. O ADR 0021 registra que dois hooks foram decoracao
   por versoes inteiras exatamente por esse engano.
