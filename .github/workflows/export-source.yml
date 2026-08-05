@@ -1,4 +1,4 @@
-# TEMPORARIO: exporta o snapshot exato para reproducao local fora do runner.
+# TEMPORARIO: exporta o snapshot exato e o historico Git para reproducao local fora do runner.
 # Removido antes do merge; actions pinadas por SHA completo para nao abrir excecao no gate.
 name: export-source
 on:
@@ -15,11 +15,19 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with: { fetch-depth: 0 }
-      - name: empacota snapshot
-        run: tar --exclude=.git -czf "$RUNNER_TEMP/evidence-gate-source.tgz" .
+      - name: empacota snapshot e historico
+        run: |
+          set -euo pipefail
+          git bundle create "$RUNNER_TEMP/evidence-gate.bundle" --all
+          tar --exclude=.git -czf "$RUNNER_TEMP/evidence-gate-source.tgz" .
+          sha256sum "$RUNNER_TEMP/evidence-gate.bundle" "$RUNNER_TEMP/evidence-gate-source.tgz" \
+            > "$RUNNER_TEMP/SHA256SUMS"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: evidence-gate-source-${{ github.sha }}
-          path: ${{ runner.temp }}/evidence-gate-source.tgz
+          name: evidence-gate-repro-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/evidence-gate.bundle
+            ${{ runner.temp }}/evidence-gate-source.tgz
+            ${{ runner.temp }}/SHA256SUMS
           if-no-files-found: error
           retention-days: 1
