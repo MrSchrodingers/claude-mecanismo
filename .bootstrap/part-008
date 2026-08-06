@@ -1,0 +1,405 @@
+plan → /prd-to-issues → subagente `tdd`
+        ↑                                              ↑
+-  /grill-me (stress-test)                    /triage-issue (bugs)
++  /grill-me (stress-test)                    subagente `investigador` (bugs)
+ ```
+ 
+ Apos criar o PRD, sugira ao usuario:
+@@ -58,7 +58,7 @@ Use o Agent tool com subagent_type=Explore para investigacao profunda. NAO confi
+ 
+ Entreviste o usuario sobre CADA aspecto do plano ate atingir entendimento compartilhado. Percorra cada galho da arvore de decisao, resolvendo dependencias uma a uma.
+ 
+-**Esta etapa eh equivalente a invocar `/grill-me` (ou `/entrevistador` no contexto do projeto).**
++**Esta etapa equivale a invocar `/grill-me`, sem dependencia de comando externo ou contexto de projeto legado.**
+ 
+ **Tecnicas de entrevista:**
+ 
+@@ -106,7 +106,7 @@ Apresente os modulos ao usuario e confirme:
+ - Algum modulo esta faltando ou sobrando?
+ - A granularidade esta adequada?
+ 
+-Se o design de interface for complexo, sugira invocar `/design-an-interface` para explorar alternativas em paralelo.
++Se o design de interface for complexo, delegue alternativas em paralelo ao subagente `revisor-frontend` em modo read-only.
+ 
+ ### 5. Definir Criterios de Aceitacao
+ 
+@@ -236,8 +236,8 @@ Descricao explicita do que NAO faz parte deste PRD:
+ Apos aprovacao deste PRD:
+ 1. `/prd-to-plan` — criar plano de implementacao por fases (tracer bullets)
+ 2. `/prd-to-issues` — quebrar em issues independentes no GitHub
+-3. `/tdd` — implementar cada issue via ciclos red-green-refactor
+-4. `/revisao-codigo` — revisar antes de merge
++3. subagente `tdd` — implementar cada issue via ciclos red-green-refactor
++4. subagente `revisor-codigo` — revisar antes de merge
+ 
+ ## Notas Adicionais
+ 
+diff --git a/install/apply-claude-global.ps1 b/install/apply-claude-global.ps1
+new file mode 100644
+index 0000000..94d626c
+--- /dev/null
++++ b/install/apply-claude-global.ps1
+@@ -0,0 +1,60 @@
++[CmdletBinding()]
++param(
++    [switch]$DryRun,
++    [switch]$Verify
++)
++
++Set-StrictMode -Version Latest
++$ErrorActionPreference = 'Stop'
++
++$Repo = Split-Path -Parent $PSScriptRoot
++$Apply = Join-Path $Repo 'install/apply.sh'
++$VerifyScript = Join-Path $Repo 'install/verify.sh'
++
++function Resolve-GitBash {
++    $Candidates = @(
++        $env:CLAUDE_CODE_GIT_BASH_PATH,
++        (Join-Path $env:ProgramFiles 'Git\bin\bash.exe'),
++        (Join-Path $env:ProgramFiles 'Git\usr\bin\bash.exe'),
++        (Join-Path ${env:ProgramFiles(x86)} 'Git\bin\bash.exe')
++    ) | Where-Object { $_ }
++
++    $Command = Get-Command bash.exe -ErrorAction SilentlyContinue
++    if ($Command) {
++        $Candidates = @($Command.Source) + $Candidates
++    }
++
++    foreach ($Candidate in $Candidates) {
++        if (Test-Path -LiteralPath $Candidate -PathType Leaf) {
++            return (Resolve-Path -LiteralPath $Candidate).Path
++        }
++    }
++
++    throw 'Git Bash não encontrado. Instale Git for Windows ou defina CLAUDE_CODE_GIT_BASH_PATH.'
++}
++
++function Convert-ToBashPath([string]$WindowsPath, [string]$Bash) {
++    $Result = & $Bash -lc "cygpath -u '$($WindowsPath.Replace("'", "'\"'\"'"))'"
++    if ($LASTEXITCODE -ne 0 -or -not $Result) {
++        throw "Não foi possível converter o caminho: $WindowsPath"
++    }
++    return $Result.Trim()
++}
++
++$Bash = Resolve-GitBash
++$ApplyBash = Convert-ToBashPath $Apply $Bash
++$VerifyBash = Convert-ToBashPath $VerifyScript $Bash
++
++if ($Verify) {
++    & $Bash $VerifyBash
++} elseif ($DryRun) {
++    & $Bash $ApplyBash '--dry-run'
++} else {
++    & $Bash $ApplyBash
++}
++
++if ($LASTEXITCODE -ne 0) {
++    throw "evidence-gate terminou com código $LASTEXITCODE."
++}
++
++Write-Host "Configuração global verificada em $env:USERPROFILE\.claude"
+diff --git a/install/apply-managed.sh b/install/apply-managed.sh
+old mode 100644
+new mode 100755
+index 32b910f..ffbd480
+--- a/install/apply-managed.sh
++++ b/install/apply-managed.sh
+@@ -168,23 +168,58 @@ if [ "$MODO" = "revert" ]; then
+   exit 0
+ fi
+ 
+-conformidade_managed(){   # ecoa "ok N" ou lista divergencias; nunca escreve
+-  local div=0 n=0 dono_ruim=0 grav=0
+-  while IFS=$'\t' read -r _tipo origem destino sha; do
++modo_esperado(){ # $1=tipo do manifesto  $2=caminho; imprime modo octal sem zero inicial
++  case "$1:$2" in
++    hook:*|doctool:*|*:*.sh) printf '755\n' ;;
++    *)                        printf '644\n' ;;
++  esac
++}
++
++verifica_inode(){ # $1=tipo $2=caminho $3=modo esperado; atualiza contadores globais
++  local tipo="$1" alvo="$2" esperado="$3" modo dono grupo
++  if [ ! -f "$alvo" ] || [ -L "$alvo" ]; then
++    echo "  TIPO!=arquivo-regular  $alvo"; tipo_ruim=$((tipo_ruim+1)); return
++  fi
++  modo="$(stat -c '%a' "$alvo" 2>/dev/null || echo '?')"
++  [ "$modo" = "$esperado" ] || { echo "  MODO=$modo (esperado $esperado)  $alvo"; modo_ruim=$((modo_ruim+1)); }
++  if [ "$REAL" -eq 1 ]; then
++    dono="$(stat -c '%U' "$alvo" 2>/dev/null || echo '?')"
++    grupo="$(stat -c '%G' "$alvo" 2>/dev/null || echo '?')"
++    [ "$dono" = root ] || { echo "  DONO=$dono (esperado root)  $alvo"; dono_ruim=$((dono_ruim+1)); }
++    [ "$grupo" = root ] || { echo "  GRUPO=$grupo (esperado root)  $alvo"; grupo_ruim=$((grupo_ruim+1)); }
++  fi
++}
++
++conformidade_managed(){   # lista divergencias; nunca escreve
++  local div=0 n=0
++  dono_ruim=0; grupo_ruim=0; modo_ruim=0; tipo_ruim=0
++  while IFS=$'\t' read -r tipo origem destino sha; do
+     n=$((n+1))
+-    local alvo="$RAIZ/$(destino_managed "$destino")"
++    local alvo="$RAIZ/$(destino_managed "$destino")" d esperado
+     if [ ! -e "$alvo" ]; then echo "  AUSENTE  $alvo"; div=$((div+1)); continue; fi
+-    local d
+-    if [ -d "$alvo" ]; then d="$(cd "$alvo" && find . -type f -exec sha256sum {} + | LC_ALL=C sort -k2 | sha256sum | cut -d' ' -f1)"
+-    else d="$(sha256sum "$alvo" | cut -d' ' -f1)"; fi
+-    [ "$d" = "$sha" ] || { echo "  DIVERGE  $alvo"; div=$((div+1)); }
+-    if [ "$REAL" -eq 1 ]; then
+-      [ "$(stat -c '%U' "$alvo")" = "root" ] || { echo "  DONO!=root  $alvo"; dono_ruim=$((dono_ruim+1)); }
+-      # o ponto inteiro da fase 2: o ator governado nao pode reescrever a politica
+-      [ -w "$alvo" ] && [ "$(id -u)" -ne 0 ] && { echo "  GRAVAVEL pelo ator  $alvo"; grav=$((grav+1)); }
++    if [ -d "$REPO/$origem" ]; then
++      if [ ! -d "$alvo" ] || [ -L "$alvo" ]; then
++        echo "  TIPO!=diretorio-real  $alvo"; tipo_ruim=$((tipo_ruim+1)); continue
++      fi
++      while IFS= read -r sub; do
++        [ "$(stat -c '%a' "$sub" 2>/dev/null || echo '?')" = 755 ] \
++          || { echo "  MODO de diretorio!=755  $sub"; modo_ruim=$((modo_ruim+1)); }
++        if [ "$REAL" -eq 1 ]; then
++          [ "$(stat -c '%U:%G' "$sub" 2>/dev/null || echo '?')" = root:root ] \
++            || { echo "  POSSE de diretorio!=root:root  $sub"; dono_ruim=$((dono_ruim+1)); }
++        fi
++      done < <(find "$alvo" -type d -print)
++      while IFS= read -r sub; do
++        esperado="$(modo_esperado "$tipo" "$sub")"
++        verifica_inode "$tipo" "$sub" "$esperado"
++      done < <(find "$alvo" -type f -print)
++      d="$(cd "$alvo" && find . -type f -exec sha256sum {} + | LC_ALL=C sort -k2 | sha256sum | cut -d' ' -f1)"
++    else
++      esperado="$(modo_esperado "$tipo" "$alvo")"
++      verifica_inode "$tipo" "$alvo" "$esperado"
++      d="$(sha256sum "$alvo" 2>/dev/null | cut -d' ' -f1)"
+     fi
++    [ "$d" = "$sha" ] || { echo "  DIVERGE  $alvo"; div=$((div+1)); }
+   done < <(tipos_politica)
+-  echo "RESUMO $n $div $dono_ruim $grav"
++  echo "RESUMO $n $div $dono_ruim $grupo_ruim $modo_ruim $tipo_ruim"
+ }
+ 
+ if [ "$MODO" = "verify" ]; then
+@@ -196,17 +231,17 @@ if [ "$MODO" = "verify" ]; then
+     exit 1
+   fi
+   out="$(conformidade_managed)"; printf '%s\n' "$out" | grep -v '^RESUMO' || true
+-  read -r _ n div dono grav <<<"$(printf '%s\n' "$out" | grep '^RESUMO')"
++  read -r _ n div dono grupo modo tipo <<<"$(printf '%s\n' "$out" | grep '^RESUMO')"
+   # HONESTIDADE DE MODO. As colunas de dono e de gravabilidade so sao AVALIADAS quando o
+   # prefixo e a raiz real; sob prefixo de ensaio o laco nem entra nesse ramo. Imprimir "0
+   # gravaveis pelo ator" ali era pos-condicao vacuamente verdadeira - a checagem nao executou -
+   # e a suite lia esse veredito como aprovacao da garantia CENTRAL da fase 2.
+   if [ "$REAL" -eq 1 ]; then
+-    printf 'managed: %s componentes | %s divergentes | %s com dono errado | %s gravaveis pelo ator\n' \
+-           "$n" "$div" "$dono" "$grav"
++    printf 'managed: %s componentes | %s divergentes | dono=%s | grupo=%s | modo=%s | tipo=%s\n' \
++           "$n" "$div" "$dono" "$grupo" "$modo" "$tipo"
+   else
+-    printf 'managed: %s componentes | %s divergentes | dono=NAO VERIFICADO gravabilidade=NAO VERIFICADO (prefixo de ensaio)\n' \
+-           "$n" "$div"
++    printf 'managed: %s componentes | %s divergentes | modo=%s | tipo=%s | posse=NAO VERIFICADA (prefixo de ensaio)\n' \
++           "$n" "$div" "$modo" "$tipo"
+   fi
+   if [ -f "$SETTINGS" ]; then
+     printf 'allowManagedHooksOnly=%s\n' "$(jq -r '.allowManagedHooksOnly // false' "$SETTINGS" 2>/dev/null)"
+@@ -214,7 +249,7 @@ if [ "$MODO" = "verify" ]; then
+     echo "managed-settings.json AUSENTE"; exit 1
+   fi
+   [ "${n:-0}" -gt 0 ] || { echo "ESTADO: conjunto VAZIO - nada a verificar, nao e conformidade" >&2; exit 1; }
+-  [ "$div" -eq 0 ] && [ "$dono" -eq 0 ] && [ "$grav" -eq 0 ] || exit 1
++  [ "$div" -eq 0 ] && [ "$dono" -eq 0 ] && [ "$grupo" -eq 0 ] && [ "$modo" -eq 0 ] && [ "$tipo" -eq 0 ] || exit 1
+   if [ "$REAL" -eq 1 ]; then
+     echo "ESTADO: politica fora do espaco de escrita do ator"
+   else
+@@ -243,13 +278,17 @@ fi
+ # atualizada - alguns componentes na versao nova, outros na antiga - com a politica velha ainda
+ # apontando para ela. A auditoria externa nomeou a propriedade que faltava:
+ #
+-#     DeployFail  =>  ActiveState_depois == ActiveState_antes
++#     CommitFailure_observada AND RollbackSuccess
++#       => ActiveState_depois == ActiveState_antes
+ #
+-# ESCOPO EXATO DESSA IMPLICACAO, porque publica-la larga demais ja custou uma revisao:
++# ESCOPO EXATO DESSA IMPLICACAO, porque publica-la larga demais ja custou duas revisoes:
+ #   ActiveState = (arvore em $OPT, politica em $SETTINGS). AS DUAS metades.
+-#   DeployFail  = qualquer saida != 0 deste script POR ERRO OBSERVADO - portao, `jq`, `cp`,
+-#                 `chmod`, `chown`, `mv`. Cada uma dessas chamadas tem retorno verificado, e a
+-#                 fase de commit chama `desfaz` antes de sair.
++#   Falha observada = portao, `jq`, `cp`, `chmod`, `chown` ou `mv` com retorno conferido.
++#   RollbackSuccess = `desfaz` restaurou integralmente o estado anterior. Se o proprio rollback
++#                     falhar, o script retorna 70, publica ROLLBACK_FAILED e preserva recuperacao;
++#                     NAO afirma que o estado ficou inalterado.
++#   Primeiro deploy = ausencia anterior e uma precondicao distinta: rollback remove a arvore e
++#                     a politica novas. MG19 e MI4 exercitam esse dominio.
+ #   NAO COBERTO  = terminacao que o shell nao observa: `SIGKILL`, queda de energia, filesystem
+ #                 desmontado no meio. `rename(2)` nao substitui diretorio nao vazio, entao a
+ #                 troca da arvore sao DUAS chamadas, e uma morte subita entre elas deixa $OPT
+@@ -268,14 +307,22 @@ trap 'rm -rf "$STAGE" 2>/dev/null || true' EXIT
+ rm -rf "$STAGE" || exit 1
+ mkdir -p "$STAGE" "$ETC" || exit 1
+ RAIZ="$STAGE"          # a partir daqui, validar significa validar o STAGING
+-while IFS=$'\t' read -r _tipo origem destino _sha; do
++while IFS=$'\t' read -r tipo origem destino _sha; do
+   alvo="$STAGE/$(destino_managed "$destino")"
+-  mkdir -p "$(dirname "$alvo")"
+-  if [ -d "$origem" ]; then rm -rf "$alvo"; cp -a "$origem" "$alvo"
+-  else cp -f "$origem" "$alvo"; fi
+-  case "$alvo" in *.sh|*/document-tools/*) chmod 0755 "$alvo" ;; *) chmod 0644 "$alvo" ;; esac
++  mkdir -p "$(dirname "$alvo")" || { echo "ERRO: mkdir falhou para $alvo" >&2; exit 1; }
++  if [ -d "$origem" ]; then
++    rm -rf "$alvo" || { echo "ERRO: limpeza do staging falhou para $alvo" >&2; exit 1; }
++    cp -a "$origem" "$alvo" || { echo "ERRO: copia de diretorio falhou para $alvo" >&2; exit 1; }
++    find "$alvo" -type d -exec chmod 0755 {} + \
++      || { echo "ERRO: chmod de diretorio falhou para $alvo" >&2; exit 1; }
++    while IFS= read -r sub; do
++      chmod "$(modo_esperado "$tipo" "$sub")" "$sub" \
++        || { echo "ERRO: chmod de arquivo falhou para $sub" >&2; exit 1; }
++    done < <(find "$alvo" -type f -print)
++  else
++    cp -f "$origem" "$alvo" || { echo "ERRO: copia falhou para $alvo" >&2; exit 1; }
++    chmod "$(modo_esperado "$tipo" "$alvo")" "$alvo" \
++      || { echo "ERRO: chmod falhou para $alvo" >&2; exit 1; }
++  fi
+ done < <(tipos_politica)
+-find "$STAGE" -type d -exec chmod 0755 {} + 2>/dev/null || true
++find "$STAGE" -type d -exec chmod 0755 {} + \
++  || { echo "ERRO: normalizacao dos diretorios do staging falhou" >&2; exit 1; }
+ # POSSE APLICADA NO STAGING, e nao depois da publicacao: se `chown` falhasse com a arvore ja
+ # ativa, o resultado seria uma politica ativa com arquivos do ator - o oposto da garantia.
+ if [ "$REAL" -eq 1 ]; then chown -R root:root "$STAGE" || exit 1; fi
+@@ -292,9 +339,9 @@ if [ "$REAL" -eq 1 ]; then chown -R root:root "$STAGE" || exit 1; fi
+ # existentes continuam seguros.
+ echo "=== conformidade do escopo managed (ANTES de escrever a politica) ==="
+ out="$(conformidade_managed)"; printf '%s\n' "$out" | grep -v '^RESUMO' || true
+-read -r _ n div dono grav <<<"$(printf '%s\n' "$out" | grep '^RESUMO')"
+-printf 'managed: %s componentes | %s divergentes | %s com dono errado | %s gravaveis pelo ator\n' \
+-       "$n" "$div" "$dono" "$grav"
++read -r _ n div dono grupo modo tipo <<<"$(printf '%s\n' "$out" | grep '^RESUMO')"
++printf 'managed: %s componentes | %s divergentes | dono=%s | grupo=%s | modo=%s | tipo=%s\n' \
++       "$n" "$div" "$dono" "$grupo" "$modo" "$tipo"
+ # `n` ENTRA NO PORTAO. Sem isto o portao contava DIVERGENCIA e nunca POPULACAO: com o conjunto
+ # de politica VAZIO, o laco de copia nao copia nada, a conformidade nao itera nada, e
+ # `0 divergentes` era lido como aprovacao - gravando `allowManagedHooksOnly: true` apontando
+@@ -312,7 +359,7 @@ if [ "${n:-0}" -eq 0 ] || [ "$n" -ne "$ESPERADOS" ]; then
+   echo "      inexistente. Regenere com 'bash install/manifest.sh'." >&2
+   exit 1
+ fi
+-if [ "$div" -ne 0 ] || [ "$dono" -ne 0 ] || [ "$grav" -ne 0 ]; then
++if [ "$div" -ne 0 ] || [ "$dono" -ne 0 ] || [ "$grupo" -ne 0 ] || [ "$modo" -ne 0 ] || [ "$tipo" -ne 0 ]; then
+   # MENSAGEM CORRIGIDA (auditoria de 2026-08-04). A versao anterior afirmava "o estado anterior
+   # permanece intacto", e isso foi MEDIDO COMO FALSO: quando esta linha era alcancada, os
+   # arquivos ja haviam sido copiados. O portao protege a POLITICA, nao a arvore em $OPT - e uma
+@@ -451,47 +498,78 @@ fi
+ 
+ # --- FASE DE COMMIT: so renames, cada um verificado -------------------------------------------
+ ANTERIOR="$OPT.anterior.$$"
++TINHA_OPT=0
++PRESERVA_RECUPERACAO=0
+ 
+-desfaz(){  # devolve o estado ativo INTEIRO ao que era: arvore E politica
+-  if [ -d "$ANTERIOR" ]; then
+-    rm -rf "$OPT" 2>/dev/null || true
+-    mv -f "$ANTERIOR" "$OPT" 2>/dev/null \
+-      && echo "      ROLLBACK: arvore anterior recolocada em $OPT." >&2 \
+-      || echo "      ATENCAO: o rollback da arvore FALHOU; $OPT pode estar ausente." >&2
++# 70 distingue falha da operacao (1) de falha do proprio rollback. Nesse estado, o instalador
++# preserva tudo que ainda pode permitir recuperacao manual e imprime os caminhos exatos.
++desfaz(){  # retorna 0 somente se o estado ativo anterior foi restaurado integralmente
++  local falhou=0
++  if [ "$TINHA_OPT" -eq 1 ]; then
++    if failpoint_ativo rollback-arvore \
++       || ! rm -rf "$OPT" 2>/dev/null \
++       || ! mv -f "$ANTERIOR" "$OPT" 2>/dev/null; then
++      echo "      ROLLBACK_FAILED: arvore anterior nao foi restaurada." >&2; falhou=1
++    else
++      echo "      ROLLBACK: arvore anterior recolocada em $OPT." >&2
++    fi
++  else
++    if ! rm -rf "$OPT" 2>/dev/null; then
++      echo "      ROLLBACK_FAILED: a arvore do primeiro deploy nao foi removida." >&2; falhou=1
++    else
++      echo "      ROLLBACK: primeiro deploy removido; a ausencia anterior foi restaurada." >&2
++    fi
+   fi
+-  if [ "$TEM_ROLLBACK" -eq 1 ] && [ -f "$SET_ROLLBACK" ]; then
+-    mv -f "$SET_ROLLBACK" "$SETTINGS" 2>/dev/null \
+-      && echo "      ROLLBACK: politica anterior recolocada em $SETTINGS." >&2 \
+-      || echo "      ATENCAO: o rollback da politica FALHOU." >&2
+-  elif [ "$TEM_ROLLBACK" -eq 0 ]; then
+-    # nao havia politica antes; o estado anterior e a AUSENCIA dela
+-    rm -f "$SETTINGS" 2>/dev/null || true
++
++  if [ "$TEM_ROLLBACK" -eq 1 ]; then
++    if failpoint_ativo rollback-politica \
++       || [ ! -f "$SET_ROLLBACK" ] \
++       || ! mv -f "$SET_ROLLBACK" "$SETTINGS" 2>/dev/null; then
++      echo "      ROLLBACK_FAILED: politica anterior nao foi restaurada." >&2; falhou=1
++    else
++      echo "      ROLLBACK: politica anterior recolocada em $SETTINGS." >&2
++    fi
++  else
++    if ! rm -f "$SETTINGS" 2>/dev/null; then
++      echo "      ROLLBACK_FAILED: a politica do primeiro deploy nao foi removida." >&2; falhou=1
++    fi
++  fi
++
++  if [ "$falhou" -ne 0 ]; then
++    PRESERVA_RECUPERACAO=1
++    trap - EXIT
++    echo "      RECUPERACAO PRESERVADA: $ANTERIOR $SET_ROLLBACK $SET_NOVO $STAGE" >&2
++    return 1
+   fi
+   [ "$FEZ_PRE" -eq 1 ] && rm -f "$SETTINGS.pre-evidence-gate" 2>/dev/null || true
++  return 0
++}
++
++falha_com_rollback(){
++  local mensagem="$1"
++  echo "ERRO: $mensagem" >&2
++  if desfaz; then exit 1; else exit 70; fi
+ }
+ 
+ # FAILPOINT - existe SO para teste (tests/unit/managed.sh, MG17/MG18). Sem a variavel definida
+ # e um no-op. Nao concede autoridade alguma: o unico efeito possivel e provocar uma falha e o
+ # rollback correspondente. Sem ele, a falha POS-PUBLICACAO nao pode ser exercitada de forma
+ # deterministica - e foi justamente a ausencia desse caso que deixou o defeito acima passar.
+-falha_se(){ [ "${MANAGED_FAILPOINT:-}" = "$1" ] && { echo "ERRO: falha injetada no ponto '$1'." >&2; return 0; }; return 1; }
++failpoint_ativo(){ case ",${MANAGED_FAILPOINT:-}," in *",$1,"*) return 0 ;; *) return 1 ;; esac; }
++falha_se(){ failpoint_ativo "$1" && { echo "ERRO: falha injetada no ponto '$1'." >&2; return 0; }; return 1; }
+ 
+ if [ -d "$OPT" ]; then
++  TINHA_OPT=1
+   mv -f "$OPT" "$ANTERIOR" \
+     || { echo "ERRO: nao foi possivel afastar a arvore ativa; nada mudou." >&2; exit 1; }
+ fi
+-if falha_se afastar-opt; then desfaz; exit 1; fi
++if falha_se afastar-opt; then falha_com_rollback "falha injetada depois de afastar a arvore"; fi
+ 
+ if ! mv -f "$STAGE" "$OPT"; then
+-  echo "ERRO: a publicacao da arvore falhou." >&2; desfaz; exit 1
++  falha_com_rollback "a publicacao da arvore falhou"
+ fi
+-if falha_se publicar-opt; then desfaz; exit 1; fi
++if falha_se publicar-opt; then falha_com_rollback "falha injetada depois de publicar a arvore"; fi
+ 
+ if ! mv -f "$SET_NOVO" "$SETTINGS"; then
+-  echo "ERRO: a instalacao da politica falhou APOS a publicacao da arvore." >&2
+-  desfaz; exit 1
++  falha_com_rollback "a instalacao da politica falhou APOS a publicacao da arvore"
+ fi
+-if falha_se instalar-politica; then desfaz; exit 1; fi
++if falha_se instalar-politica; then falha_com_rollback "falha injetada depois de instalar a politica"; fi
+ 
+ # COMMIT CONFIRMADO. So agora o material de rollback pode ser descartado - antes disto, qualquer
+ # saida do script passa por `desfaz` ou pelo trap, e ambos precisam dele.
+diff --git a/install/manifest.lock b/install/manifest.lock
+index b42dc63..055ee02 100644
+--- a/install/manifest.lock
++++ b/install/manifest.lock
+@@ -1,7 +1,7 @@
+ # evidence-gate manifest - estado DESEJADO de ~/.claude
+ # gerado por install/manifest.sh; conferido por install/verify.sh
+ # tipo\torigem\tdestino\tsha256
+-hook\tcontrol/hooks/artifact-discipline.sh\thooks/artifact-discipline.sh\te64fcd952cc75cf363d61d399d0271b6f644013bc37fd39fe76310a8739ececc
++hook\tcontrol/hook
