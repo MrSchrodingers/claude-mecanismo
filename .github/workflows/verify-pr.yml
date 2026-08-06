@@ -1,60 +1,139 @@
+# GATE EXTERNO. Esta e a unica fronteira desta arquitetura que o ator governado nao sobrepoe.
+#
+# O hook Stop nao serve para isso, por quatro razoes verificadas: stop_hook_active libera a
+# parada seguinte; o runtime sobrepoe o hook apos N bloqueios; N vive em variavel dentro do
+# settings.json que o proprio ator escreve; e Stop nao dispara em interrupcao nem em erro de API.
+# Ver docs/adr/0022.
+#
+# Para que este workflow seja enforcement e nao decoracao, e preciso configurar no repositorio:
+#   Settings > Rules > required status check = "verify-pr"
+#   proibir bypass para o ator, e exigir o check sobre o SHA exato.
+# Sem isso ele e feedback, como pre-commit - que `git commit --no-verify` ignora (medido).
+#
+# ESTE E O CONTEXTO EXIGIDO. O gemeo `verify-push.yml` roda a MESMA verificacao em `push` e NAO
+# deve ser exigido pelo ruleset.
+#
+# POR QUE SAO DOIS ARQUIVOS - defeito MEDIDO em 2026-08-04, nao preferencia de estilo.
+# Antes, um unico workflow `verify` disparava em `push` e em `pull_request` com um unico job
+# `verify`. Sobre o head do PR #4:
+#
+#   $ gh api repos/MrSchrodingers/evidence-gate/commits/ef307bf.../check-runs
+#   2
+#   verify | success | id=92057531104
+#   verify | success | id=92057522494
+#
+# DOIS check-runs homonimos sobre o MESMO SHA. Um required status check e identificado por NOME,
+# e qual dos dois a regra avalia quando eles DIVERGEM nao foi localizado na doc primaria
+# (limitacao registrada em C-016). A propriedade exigida nao e
+# `|{check-runs chamados verify}| >= 1`, e sim `|{check-runs com o nome exigido}| = 1`.
+# tests/unit/fronteira-externa.sh trava essa propriedade; tests/mutation/fronteira.sh a mata.
+#
+# POR QUE NAO REUSO (composite action / reusable workflow): ambos me obrigariam a AFIRMAR o nome
+# do check-run resultante sem poder verifica-lo na doc primaria - exatamente o defeito sendo
+# corrigido. Alem disso, composite action nao aceita `timeout-minutes` em passo (doc primaria
+# "Metadata syntax": run, shell, if, name, id, env, working-directory, uses, with,
+# continue-on-error). O preco desta escolha e a duplicacao dos passos entre os dois arquivos, e
+# esse preco e PAGO pelo caso FE3, que reprova se os dois divergirem.
 name: verify-pr
-
 on:
   pull_request:
-
-permissions:
-  contents: write
-
+  merge_group:
+# O GRUPO INCLUI O NOME DO WORKFLOW de proposito: se `verify-pr` e `verify-push` caissem no mesmo
+# grupo sobre o mesmo ref, um cancelaria o outro. Cancelar o run exigido deixa o check em
+# `cancelled` - nunca `success` - e o PR nao fecha mais.
 concurrency:
-  group: bootstrap-verify-pr-${{ github.event.pull_request.number }}
-  cancel-in-progress: false
-
+  group: verify-pr-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+permissions:
+  contents: read
 jobs:
   verify-pr:
+    # `name:` explicito e IGUAL ao job id: com ou sem `name:`, o nome do check-run e o mesmo
+    # string, e a premissa sobre qual dos dois o GitHub usa deixa de decidir o resultado.
     name: verify-pr
     runs-on: ubuntu-24.04
-    timeout-minutes: 35
+    # TETO, nao medicao: o provisionamento ja tem 6min proprios, e as suites somadas nao foram
+    # cronometradas na CI. Existe para que um travamento nao consuma o runner indefinidamente.
+    timeout-minutes: 30
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
-        with:
-          fetch-depth: 0
-          ref: ${{ github.head_ref }}
-      - name: materializa o commit definitivo e remove o transporte
-        env:
-          EXPECTED_PATCH_SHA256: 91f331aed2ba716fd25f5c71f9e2dc2281d9a85dd258f3afc00cab93303925ec
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4 pinado: tag e mutavel
+        with: { fetch-depth: 0 }
+      - name: ferramentas dos adaptadores
+        # ORCAMENTO: sem limite, este passo levou 14min52s numa execucao (apt-get). Um gate que
+        # pode consumir tempo indefinido por dependencia externa e um problema operacional, ainda
+        # que termine verde. Falha aqui e ENVIRONMENT_PROVISIONING_FAILED, nao reprovacao
+        # semantica do executor documental.
+        timeout-minutes: 6
         run: |
           set -euo pipefail
-          test -d .bootstrap
-          cat .bootstrap/part-* > /tmp/source.patch
-          printf '%s  %s\n' "$EXPECTED_PATCH_SHA256" /tmp/source.patch | sha256sum -c -
-
-          git checkout origin/main -- .github/workflows/verify-pr.yml
-          git apply --check /tmp/source.patch
-          git apply /tmp/source.patch
-
-          python3 -m pip install --quiet \
-            'ruff==0.15.5' \
-            'pandas==2.2.3' \
-            'openpyxl==3.1.5' \
-            'pymupdf==1.27.1' \
-            'packaging==25.0' \
-            'pyyaml==6.0.2'
-
-          python3 orchestration/render.py
-          bash install/manifest.sh install/manifest.lock
-          bash scripts/status.sh
-          python3 orchestration/render.py --check
-          bash tests/unit/runtime-ports.sh
-          bash tests/unit/managed.sh
-          bash tests/mutation/install.sh
-          bash tests/unit/regressao-gate.sh
-          bash tests/unit/run.sh
-
-          rm -rf .bootstrap .github/workflows/materialize-multiruntime.yml
-          git add -A
-          git diff --cached --check
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git commit -m 'feat: estrutura orquestração multirruntime baseada em evidências'
-          git push origin HEAD:${{ github.head_ref }}
+          export DEBIAN_FRONTEND=noninteractive
+          python3 -m pip install --quiet 'ruff==0.15.5' 'pandas==2.2.3' 'openpyxl==3.1.5' 'pymupdf==1.27.1' 'packaging==25.0' 'pyyaml==6.0.2'
+          missing=()
+          command -v pdftotext >/dev/null || missing+=(poppler-utils)
+          command -v pandoc    >/dev/null || missing+=(pandoc)
+          if [ "${#missing[@]}" -gt 0 ]; then
+            echo "instalando: ${missing[*]}"
+            sudo timeout 180 apt-get -o Acquire::Retries=3 update -qq
+            sudo timeout 180 apt-get -o Acquire::Retries=3 install -y -qq "${missing[@]}"
+          else
+            echo "poppler-utils e pandoc ja presentes na imagem; apt nao foi acionado"
+          fi
+          echo "versoes de sistema observadas nesta execucao:"
+          pdftotext -v 2>&1 | head -1; pandoc --version | head -1
+          ruff --version && node --version && jq --version
+      - name: sintaxe de todo hook
+        run: |
+          rc=0
+          for f in control/hooks/*.sh execution/hooks/*.sh evidence/hooks/*.sh install/*.sh tests/*/*.sh; do
+            bash -n "$f" || { echo "QUEBRADO: $f"; rc=1; }
+          done
+          exit $rc
+      - name: adaptadores sao JSON valido e declaram efeitos
+        run: |
+          rc=0
+          for a in execution/adapters/code/*.json; do
+            jq -e . "$a" >/dev/null || { echo "JSON invalido: $a"; rc=1; }
+            jq -e '.exec.command and .exec.args and .declared_effects and .rationale' "$a" >/dev/null \
+              || { echo "contrato incompleto: $a"; rc=1; }
+          done
+          for a in execution/adapters/documents/*.json; do
+            jq -e . "$a" >/dev/null || { echo "JSON invalido: $a"; rc=1; }
+          done
+          exit $rc
+      - name: manifesto reflete a arvore
+        run: |
+          bash install/manifest.sh install/manifest.check >/dev/null
+          diff -u install/manifest.lock install/manifest.check \
+            || { echo "manifest.lock desatualizado - rode install/manifest.sh e commite"; exit 1; }
+      - name: orquestracao multirruntime e projecoes
+        run: bash tests/unit/runtime-ports.sh
+      - name: fronteira externa (o contexto do required check e unico)
+        run: bash tests/unit/fronteira-externa.sh
+      - name: cadeia de suprimentos
+        run: bash tests/unit/supply-chain.sh
+      - name: executor documental
+        run: bash tests/unit/document-tools.sh
+      - name: reprodutibilidade (metamorfico)
+        run: bash tests/unit/reprodutibilidade.sh
+      - name: raiz de confianca (instalador managed, prefixo de ensaio)
+        run: bash tests/unit/managed.sh
+      - name: propriedades (detectores invariantes a formatacao)
+        run: bash tests/unit/propriedades.sh
+      - name: claim ledger (evidencia citada existe)
+        run: bash tests/unit/claims.sh
+      - name: concorrencia (lock das suites)
+        run: bash tests/unit/concorrencia.sh
+      - name: status gerado reflete a execucao
+        run: bash scripts/status.sh --check
+      - name: regressao do gate
+        run: bash tests/unit/regressao-gate.sh
+      - name: validacao por mutacao (gate)
+        run: bash tests/mutation/run.sh
+      - name: validacao por mutacao (contrato de subagente)
+        run: bash tests/mutation/contrato.sh
+      - name: validacao por mutacao (instalador)
+        run: bash tests/mutation/install.sh
+      - name: validacao por mutacao (fronteira externa)
+        run: bash tests/mutation/fronteira.sh
+      - name: suite legada
+        run: bash tests/unit/run.sh

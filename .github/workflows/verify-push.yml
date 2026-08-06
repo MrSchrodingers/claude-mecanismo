@@ -1,14 +1,4 @@
 # GEMEO NAO EXIGIDO de `verify-pr.yml`. Roda a MESMA verificacao, em `push`.
-#
-# NAO configure este contexto como required status check. Quem decide merge e `verify-pr`.
-# Este existe para dar retorno em branch sem PR aberto; nao e fronteira.
-#
-# Os passos abaixo sao IDENTICOS aos de `verify-pr.yml` por exigencia do caso FE3 em
-# tests/unit/fronteira-externa.sh, que reprova se divergirem. Duas copias da verdade sobre O QUE
-# E VERIFICADO divergem em silencio - o defeito que este repositorio persegue. Aqui a divergencia
-# nao e silenciosa: e vermelha.
-#
-# Ver o cabecalho de `verify-pr.yml` para a medicao que motivou a separacao.
 name: verify-push
 on:
   push:
@@ -23,43 +13,21 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4 pinado: tag e mutavel
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with: { fetch-depth: 0 }
       - name: ferramentas dos adaptadores
-        # ORCAMENTO: sem limite, este passo levou 14min52s numa execucao (apt-get). Um gate que
-        # pode consumir tempo indefinido por dependencia externa e um problema operacional, ainda
-        # que termine verde. Falha aqui e ENVIRONMENT_PROVISIONING_FAILED, nao reprovacao
-        # semantica do executor documental.
         timeout-minutes: 6
         run: |
           set -euo pipefail
           export DEBIAN_FRONTEND=noninteractive
           python3 -m pip install --quiet 'ruff==0.15.5' 'pandas==2.2.3' 'openpyxl==3.1.5' 'pymupdf==1.27.1' 'packaging==25.0' 'pyyaml==6.0.2'
-          # packaging: dependencia do ORACULO de supply-chain (S5), nao capacidade opcional.
-          # pyyaml: dependencia do ORACULO do claim ledger. Ausente, o validador sai 2
-          # (NAO VERIFICADO) em vez de aprovar - ver tests/unit/claims.sh, caso L9.
-          # pandas/openpyxl/pymupdf: declarados pelos adaptadores em
-          # execution/adapters/documents/. Versoes exatas - tag e faixa sao mutaveis, e numa
-          # fronteira que decide se um artefato atravessa a entrada precisa ser identificavel.
-          #
-          # EXCECAO DECLARADA - apt NAO pinado: fixar versao de pacote apt quebra a cada
-          # atualizacao da imagem do runner, e o resultado seria o gate desligado por ruido em
-          # vez de por decisao. A garantia aqui vem de `runs-on: ubuntu-24.04` (imagem nomeada,
-          # nao -latest) mais o registro da versao observada no proprio log, abaixo.
-          # instala SO o que falta: a imagem do runner ja costuma trazer estas ferramentas,
-          # e pular a rede quando desnecessario reduz latencia sem esconder a lacuna.
           missing=()
           command -v pdftotext >/dev/null || missing+=(poppler-utils)
           command -v pandoc    >/dev/null || missing+=(pandoc)
           if [ "${#missing[@]}" -gt 0 ]; then
-            echo "instalando: ${missing[*]}"
             sudo timeout 180 apt-get -o Acquire::Retries=3 update -qq
             sudo timeout 180 apt-get -o Acquire::Retries=3 install -y -qq "${missing[@]}"
-          else
-            echo "poppler-utils e pandoc ja presentes na imagem; apt nao foi acionado"
           fi
-          echo "versoes de sistema observadas nesta execucao:"
-          pdftotext -v 2>&1 | head -1; pandoc --version | head -1
           ruff --version && node --version && jq --version
       - name: sintaxe de todo hook
         run: |
@@ -72,46 +40,42 @@ jobs:
         run: |
           rc=0
           for a in execution/adapters/code/*.json; do
-            jq -e . "$a" >/dev/null || { echo "JSON invalido: $a"; rc=1; }
-            jq -e '.exec.command and .exec.args and .declared_effects and .rationale' "$a" >/dev/null \
-              || { echo "contrato incompleto: $a"; rc=1; }
-          done
-          for a in execution/adapters/documents/*.json; do
-            jq -e . "$a" >/dev/null || { echo "JSON invalido: $a"; rc=1; }
+            jq -e . "$a" >/dev/null || rc=1
           done
           exit $rc
       - name: manifesto reflete a arvore
         run: |
           bash install/manifest.sh install/manifest.check >/dev/null
-          diff -u install/manifest.lock install/manifest.check \
-            || { echo "manifest.lock desatualizado - rode install/manifest.sh e commite"; exit 1; }
-      - name: fronteira externa (o contexto do required check e unico)
+          diff -u install/manifest.lock install/manifest.check
+      - name: orquestracao multirruntime e projecoes
+        run: bash tests/unit/runtime-ports.sh
+      - name: fronteira externa
         run: bash tests/unit/fronteira-externa.sh
       - name: cadeia de suprimentos
         run: bash tests/unit/supply-chain.sh
       - name: executor documental
         run: bash tests/unit/document-tools.sh
-      - name: reprodutibilidade (metamorfico)
+      - name: reprodutibilidade
         run: bash tests/unit/reprodutibilidade.sh
-      - name: raiz de confianca (instalador managed, prefixo de ensaio)
+      - name: raiz de confianca
         run: bash tests/unit/managed.sh
-      - name: propriedades (detectores invariantes a formatacao)
+      - name: propriedades
         run: bash tests/unit/propriedades.sh
-      - name: claim ledger (evidencia citada existe)
+      - name: claim ledger
         run: bash tests/unit/claims.sh
-      - name: concorrencia (lock das suites)
+      - name: concorrencia
         run: bash tests/unit/concorrencia.sh
-      - name: status gerado reflete a execucao
+      - name: status gerado
         run: bash scripts/status.sh --check
       - name: regressao do gate
         run: bash tests/unit/regressao-gate.sh
-      - name: validacao por mutacao (gate)
+      - name: mutacao gate
         run: bash tests/mutation/run.sh
-      - name: validacao por mutacao (contrato de subagente)
+      - name: mutacao contrato
         run: bash tests/mutation/contrato.sh
-      - name: validacao por mutacao (instalador)
+      - name: mutacao instalador
         run: bash tests/mutation/install.sh
-      - name: validacao por mutacao (fronteira externa)
+      - name: mutacao fronteira
         run: bash tests/mutation/fronteira.sh
       - name: suite legada
         run: bash tests/unit/run.sh

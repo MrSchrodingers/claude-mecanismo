@@ -1,8 +1,21 @@
 {
   "name": "evidence-gate",
-  "version": "1.0.0",
-  "description": "Configuracao para Claude Code organizada em tres planos - controle (politica e integridade), execucao (hooks, adaptadores, agentes) e evidencia (verificador, ledger, CI). Um artefato so atravessa a fronteira externa quando uma politica fora da autoridade do ator confirma evidencia valida ligada ao mesmo snapshot. O hook Stop produz candidato, nunca certificado: o runtime o sobrepoe apos N bloqueios e o proprio N vive no settings.json que o ator escreve. Cada garantia do verificador tem repro executavel e mutante que a suite mata.",
-  "author": { "name": "MrSchrodingers", "url": "https://github.com/MrSchrodingers" },
+  "version": "2.0.0",
+  "description": "Harness experimental multirruntime para Claude Code Desktop/CLI e Codex, com núcleo canônico, projeções verificáveis, workflows em grafo, subagentes com escrita serializada e certificação externa vinculada ao SHA.",
+  "author": {
+    "name": "MrSchrodingers",
+    "url": "https://github.com/MrSchrodingers"
+  },
   "license": "MIT",
-  "keywords": ["hooks","evidence","verification","falsification","conformance","toolchain-agnostic","security"]
+  "keywords": [
+    "claude-code",
+    "codex",
+    "hooks",
+    "subagents",
+    "evidence",
+    "verification",
+    "falsification",
+    "mutation-testing",
+    "security"
+  ]
 }
