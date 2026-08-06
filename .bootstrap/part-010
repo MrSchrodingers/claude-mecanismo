@@ -1,0 +1,374 @@
+s/artifact-discipline.sh	hooks/artifact-discipline.sh	1f79b8e8959cc45ee98466e77bb8d33e84338cc52f01fd9b4ea889589d56b7db
+ hook	control/hooks/fable-guard.sh	hooks/fable-guard.sh	8d4a0cb16ec0ca7fc5d7db8c73eec32d601a0c4848be4bf7590021255add277b
+ hook	control/hooks/risk-trigger.sh	hooks/risk-trigger.sh	61a4c713fe597ee78ababa4441e9326f4c2de7448fcee4ff46d429541588827c
+ hook	control/hooks/self-mod-audit.sh	hooks/self-mod-audit.sh	6267201c3434ce7a8f77cf50216a96bb303ce9abcedb0153558dbf001681fe0c
+@@ -14,26 +14,26 @@ hook	execution/hooks/poka-yoke-lint.sh	hooks/poka-yoke-lint.sh	1fc83e6b1c085de08
+ hook	execution/hooks/read-budget.sh	hooks/read-budget.sh	750089c2b4f7f4e5083aba4bc7a8c826541ddfd3b5d52f93df89d31d823e1e82
+ hook	evidence/hooks/subagent-contract.sh	hooks/subagent-contract.sh	adcbddb4b1fdee0f684da7a876e2413cae9271ba315b74599b931c62f5daad68
+ hook	evidence/hooks/subagent-probe.sh	hooks/subagent-probe.sh	9dd4623a90042f2beada89177e4619b78bed5582154bd6c8878cb54d82c3567a
+-hook	evidence/hooks/verify-gate.sh	hooks/verify-gate.sh	b8044f89a4f12615093dd2fae8b77972ce6b52d2421b3c50587910043ba5e8fe
+-agent	execution/agents/analista-fluxos.md	agents/analista-fluxos.md	99416b8d46df8b26b860df81e5ef009c9fcd0b2c6b720504a3b898019e96f4f7
+-agent	execution/agents/analista-otimalidade.md	agents/analista-otimalidade.md	103b999f42aee7a8fdb6876fc0d3f120264f817eb99c1675db41b5395aff53aa
+-agent	execution/agents/auditor-seguranca.md	agents/auditor-seguranca.md	e5773f187f2a3c3645808b7430324b66f441b9d0960c2c59cec721e214482db0
+-agent	execution/agents/implementador.md	agents/implementador.md	2c20c15f057b380ce4289e1e4e6d203df809b3c75cd968a1673370fafe0ff7b4
+-agent	execution/agents/investigador.md	agents/investigador.md	541c8ab2a77e37c7d65ef6071a4e1a5cbf62cca4bae830c9770eb048781aa118
+-agent	execution/agents/mapeador-dependencias.md	agents/mapeador-dependencias.md	8c49d523eccf465b286d1d2ca24378232fe52205863c32dc7fbaaadbb683b41d
+-agent	execution/agents/refutador.md	agents/refutador.md	b0dab9880741ff62f94837f189c7ce32e76faa9f510be87ce23ac7eb55acd3b3
+-agent	execution/agents/revisor-codigo.md	agents/revisor-codigo.md	8554a970006c8204cfde4edde9c63fe562e0cf1c9b2b96e2f671d53f4625d952
+-agent	execution/agents/revisor-frontend.md	agents/revisor-frontend.md	b43009e7a342cd876c4ca449b347a39b8ab86b0376d1f028b2b5ef5f72cfa180
+-agent	execution/agents/tdd.md	agents/tdd.md	6b0b30563b41a7f359f43c6ea634ba1bd874a2910b948d6a6694dd9d754c51b2
+-skill	execution/skills/promoted/defesa-de-tese	skills/defesa-de-tese	33e282cf4eacdd6d1662228623f7350e2d38fae9430687bae96b4e9ad57815cc
+-skill	execution/skills/promoted/depreciar	skills/depreciar	647afa6582afe751543828000507306f13094f761bf3fad95d9a2e5349f0906e
+-skill	execution/skills/promoted/design-system-proposal	skills/design-system-proposal	8152dc286f00d1323eda6ead4b470eb0105f4c77d314e077079d8c73e9cfd3fb
++hook	evidence/hooks/verify-gate.sh	hooks/verify-gate.sh	300a51e7264e5469f24234567b238fad226176e4c3dbbfd306fbb5e5b4e6e582
++agent	execution/agents/analista-fluxos.md	agents/analista-fluxos.md	a98ab07793a9757ebae4f8828440d850f60e0e590220f2ee5c308205f80e5085
++agent	execution/agents/analista-otimalidade.md	agents/analista-otimalidade.md	d866568825b78d92479687674561cfac57dc9054399c0b59662b17e8d22acbe6
++agent	execution/agents/auditor-seguranca.md	agents/auditor-seguranca.md	b5b65417d24ac7e7902002de3fcac8969ebad61722ba036e2eeee09440786cc8
++agent	execution/agents/implementador.md	agents/implementador.md	9fb8dc74d221feb49e9ecfc8011a598746e396869c0e0c640d465c411b706b91
++agent	execution/agents/investigador.md	agents/investigador.md	00a4208083f4658f89beaa10bbe9e61a0551d4bf26d4deb80657780226806fb0
++agent	execution/agents/mapeador-dependencias.md	agents/mapeador-dependencias.md	5d59245f832cc2f460f9064d0491ed0463cf6731bdfb134e7a9405d640d96e94
++agent	execution/agents/refutador.md	agents/refutador.md	aed30facda25c9ce0a37b0261f1c31c748200fdb112993780026e5c67b9cddca
++agent	execution/agents/revisor-codigo.md	agents/revisor-codigo.md	43fb67684caf5a0b8e2233cabf8b02a6b48b1fdee27d5e35d30c409af5a33354
++agent	execution/agents/revisor-frontend.md	agents/revisor-frontend.md	ff3ccfbe17bd51223fe0121b05814a9ce52551a8d27cfecf93934605d5972070
++agent	execution/agents/tdd.md	agents/tdd.md	902465551b6f314abbb5dda03f78838db8f6cc8a5e527a7a654afc7e5f39e650
++skill	execution/skills/promoted/defesa-de-tese	skills/defesa-de-tese	99c7604eebe93c101c8c61a81afe29ad69cbf4e762d55a273614ac05e855a2d3
++skill	execution/skills/promoted/depreciar	skills/depreciar	cfe6fd6d50347aabeb5656e251bde331a9246f0a30c87b7d94cff08b8bd8bd92
++skill	execution/skills/promoted/design-system-proposal	skills/design-system-proposal	260fb3a032d084fc1610ed8933b3251e49a15e03957e3ab0be7fbd884650dcdb
+ skill	execution/skills/promoted/forge	skills/forge	491e0123d42c20f51d7846672ff1532b643ffd52c9f27264f86455e77ef9b451
+-skill	execution/skills/promoted/graphify	skills/graphify	4e2ba651342dbb5a3dcb3b440f2ea64db1c3ecd5e4636840987d09a4b2344bf3
+-skill	execution/skills/promoted/grill-me	skills/grill-me	9125a810c19759b55ca57af9ed890a884cf9c0d6d86cfeebda42fe197470cae0
+-skill	execution/skills/promoted/prd-to-issues	skills/prd-to-issues	28fa74f6c9063d20def2aea97f7dcd564a8de9c9b87e7a8c5d6edd3027ae193c
+-skill	execution/skills/promoted/prd-to-plan	skills/prd-to-plan	5d4e4011765284398acd75f9031dcabbed774807a808a379b65f9e92c3a56e7d
+-skill	execution/skills/promoted/write-a-prd	skills/write-a-prd	78248d589948b445705960a9b2e235a69624ba8c5f6f56ff5295590e6215111c
++skill	execution/skills/promoted/graphify	skills/graphify	ad9745a78a30cf23db18b350405f86ee5545e0e5a1432e9773d8603c93a55b24
++skill	execution/skills/promoted/grill-me	skills/grill-me	9d254e353abd665545faa0163169c71cd79991f3655ac39f2d69c77570d20467
++skill	execution/skills/promoted/prd-to-issues	skills/prd-to-issues	0ebe5ccb78847ff80f245e9d86ce6b59a67e933723782400a36d4876d8d5de5c
++skill	execution/skills/promoted/prd-to-plan	skills/prd-to-plan	e22211539faed24c5ce0b2775f97a452062c6db2dec879b76c106df6fc825d3e
++skill	execution/skills/promoted/write-a-prd	skills/write-a-prd	4845d184a18cdbb79240156093775c8a16969589e8e39f1a2aaed122726c3a21
+ adapter	execution/adapters/code/dotnet.json	evidence-gate/adapters/code/dotnet.json	de8ce4993f738dd281683bf3297cb986bcc64b14dc4f968bb7fde75f94c1261a
+ adapter	execution/adapters/code/go.json	evidence-gate/adapters/code/go.json	47162accddf5187301305bea16abe82dfbbd5f5ccca85d83ba4bf575d79e6b34
+ adapter	execution/adapters/code/java.json	evidence-gate/adapters/code/java.json	c20e5d9ab26f6c95e330f136f53e6a764618362329166a2c8ee8240d9ad308fd
+diff --git a/logitech-flow-kvm b/logitech-flow-kvm
+deleted file mode 100644
+index e69de29..0000000
+diff --git a/orchestration/registry.json b/orchestration/registry.json
+new file mode 100644
+index 0000000..3f92a56
+--- /dev/null
++++ b/orchestration/registry.json
+@@ -0,0 +1,31 @@
++{
++  "schema_version": 1,
++  "architecture": "canonical-core-with-verified-projections",
++  "invariants": {
++    "single_writer": true,
++    "independent_review": true,
++    "author_cannot_certify_own_change": true,
++    "read_parallelism_cap": 4,
++    "correction_round_cap": 2,
++    "terminal_state": "CANDIDATE",
++    "external_certifier": "verify-pr"
++  },
++  "agents": {
++    "investigador": {"source": "execution/agents/investigador.md", "writes": false, "role": "diagnosis", "risk": "all-nontrivial", "codex_model": "gpt-5.6", "effort": "high"},
++    "mapeador-dependencias": {"source": "execution/agents/mapeador-dependencias.md", "writes": false, "role": "dependency-map", "risk": "all-nontrivial", "codex_model": "gpt-5.6-terra", "effort": "high"},
++    "analista-otimalidade": {"source": "execution/agents/analista-otimalidade.md", "writes": false, "role": "algorithmic-analysis", "risk": "algorithmic", "codex_model": "gpt-5.6", "effort": "high"},
++    "analista-fluxos": {"source": "execution/agents/analista-fluxos.md", "writes": false, "role": "flow-analysis", "risk": "queues-and-pipelines", "codex_model": "gpt-5.6", "effort": "high"},
++    "tdd": {"source": "execution/agents/tdd.md", "writes": true, "role": "test-first", "risk": "behavior-change", "codex_model": "gpt-5.6", "effort": "high"},
++    "implementador": {"source": "execution/agents/implementador.md", "writes": true, "role": "implementation", "risk": "after-evidence", "codex_model": "gpt-5.6", "effort": "high"},
++    "revisor-codigo": {"source": "execution/agents/revisor-codigo.md", "writes": false, "role": "code-review", "risk": "all-writes", "codex_model": "gpt-5.6", "effort": "high"},
++    "refutador": {"source": "execution/agents/refutador.md", "writes": false, "role": "falsification", "risk": "all-writes", "codex_model": "gpt-5.6", "effort": "xhigh"},
++    "auditor-seguranca": {"source": "execution/agents/auditor-seguranca.md", "writes": false, "role": "security-audit", "risk": "security-trigger", "codex_model": "gpt-5.6", "effort": "xhigh"},
++    "revisor-frontend": {"source": "execution/agents/revisor-frontend.md", "writes": false, "role": "frontend-review", "risk": "ui-trigger", "codex_model": "gpt-5.6-terra", "effort": "high"}
++  },
++  "skills_root": "execution/skills/promoted",
++  "projections": {
++    "claude_project": {"agents": ".claude/agents", "skills": ".claude/skills", "hooks": ".claude/hooks", "settings": ".claude/settings.json", "instructions": "CLAUDE.md"},
++    "claude_global": {"installer": "install/apply.sh", "windows_wrapper": "install/apply-claude-global.ps1"},
++    "codex_project": {"agents": ".codex/agents", "skills": ".agents/skills", "hooks": ".codex/hooks.json", "config": ".codex/config.toml", "instructions": "AGENTS.md"}
++  }
++}
+diff --git a/orchestration/render.py b/orchestration/render.py
+new file mode 100755
+index 0000000..6c83a8e
+--- /dev/null
++++ b/orchestration/render.py
+@@ -0,0 +1,471 @@
++#!/usr/bin/env python3
++"""Renderiza projeções Claude Code e Codex a partir do núcleo canônico.
++
++Uso:
++    python3 orchestration/render.py
++    python3 orchestration/render.py --check
++
++A execução normal converge as projeções. ``--check`` não escreve: reprova por
++conteúdo, arquivo extra ou modo executável divergente.
++"""
++
++from __future__ import annotations
++
++import argparse
++import json
++import os
++from pathlib import Path
++import re
++import shutil
++import subprocess
++import sys
++from typing import Any
++
++import yaml
++
++ROOT = Path(__file__).resolve().parents[1]
++REGISTRY_PATH = ROOT / "orchestration/registry.json"
++WORKFLOWS_DIR = ROOT / "orchestration/workflows"
++MANIFEST_PATH = ROOT / "install/manifest.lock"
++
++MANAGED_PREFIXES = (
++    ".claude/agents/",
++    ".claude/skills/",
++    ".claude/hooks/",
++    ".codex/agents/",
++    ".codex/hooks/",
++    ".agents/skills/",
++)
++MANAGED_SINGLETONS = {
++    ".claude/settings.json",
++    ".codex/config.toml",
++    ".codex/hooks.json",
++    ".codex/run-hook.py",
++    "CLAUDE.md",
++    "AGENTS.md",
++    "docs/architecture/workflow-graphs.generated.md",
++    "evidence/graphs/workflows.generated.json",
++}
++
++
++class ProjectionError(RuntimeError):
++    """Erro de contrato do núcleo ou de uma projeção."""
++
++
++def read_text(path: Path) -> str:
++    return path.read_text(encoding="utf-8")
++
++
++def json_text(value: Any) -> str:
++    return json.dumps(value, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
++
++
++def parse_agent(path: Path) -> tuple[dict[str, Any], str]:
++    text = read_text(path)
++    match = re.match(r"\A---\n(.*?)\n---\n(.*)\Z", text, flags=re.DOTALL)
++    if not match:
++        raise ProjectionError(f"frontmatter ausente ou inválido: {path.relative_to(ROOT)}")
++    metadata = yaml.safe_load(match.group(1))
++    if not isinstance(metadata, dict):
++        raise ProjectionError(f"frontmatter não é objeto: {path.relative_to(ROOT)}")
++    return metadata, match.group(2).rstrip() + "\n"
++
++
++def load_registry() -> dict[str, Any]:
++    registry = json.loads(read_text(REGISTRY_PATH))
++    if registry.get("schema_version") != 1:
++        raise ProjectionError("schema_version do registry não suportado")
++    return registry
++
++
++def load_workflows() -> list[dict[str, Any]]:
++    workflows = []
++    for path in sorted(WORKFLOWS_DIR.glob("*.json")):
++        workflow = json.loads(read_text(path))
++        workflow["_source"] = str(path.relative_to(ROOT))
++        workflows.append(workflow)
++    if not workflows:
++        raise ProjectionError("nenhum workflow canônico encontrado")
++    return workflows
++
++
++def hook_sources() -> dict[str, Path]:
++    sources: dict[str, Path] = {}
++    for raw in read_text(MANIFEST_PATH).splitlines():
++        if not raw or raw.startswith("#"):
++            continue
++        kind, source, destination, _digest = raw.split("\t")
++        if kind != "hook":
++            continue
++        name = Path(destination).name
++        path = ROOT / source
++        if name in sources:
++            raise ProjectionError(f"hook duplicado no manifesto: {name}")
++        if not path.is_file():
++            raise ProjectionError(f"hook do manifesto ausente: {source}")
++        sources[name] = path
++    if not sources:
++        raise ProjectionError("manifesto não contém hooks")
++    return sources
++
++
++def canonical_hooks() -> dict[str, Any]:
++    proc = subprocess.run(
++        ["bash", "install/hooks-spec.sh", "${CLAUDE_PROJECT_DIR}/.claude/hooks"],
++        cwd=ROOT,
++        text=True,
++        capture_output=True,
++        check=False,
++    )
++    if proc.returncode != 0:
++        raise ProjectionError(f"hooks-spec falhou: {proc.stderr.strip()}")
++    hooks = json.loads(proc.stdout)
++    for groups in hooks.values():
++        for group in groups:
++            for handler in group.get("hooks", []):
++                command = handler.get("command", "")
++                match = re.fullmatch(r"bash (.+)", command)
++                if not match:
++                    raise ProjectionError(f"comando de hook fora do contrato: {command!r}")
++                handler["command"] = "bash"
++                handler["args"] = [match.group(1)]
++    return hooks
++
++
++def codex_hooks(claude_hooks: dict[str, Any]) -> dict[str, Any]:
++    supported = {
++        "SessionStart",
++        "PreToolUse",
++        "PostToolUse",
++        "UserPromptSubmit",
++        "Stop",
++        "SubagentStop",
++        "SubagentStart",
++    }
++    result: dict[str, Any] = {}
++    for event, groups in claude_hooks.items():
++        if event not in supported:
++            continue
++        rendered_groups = []
++        for group in groups:
++            rendered = {key: value for key, value in group.items() if key != "hooks"}
++            rendered_handlers = []
++            for handler in group.get("hooks", []):
++                script = Path(handler["args"][0]).name
++                item: dict[str, Any] = {
++                    "type": "command",
++                    "command": (
++                        'python3 "$(git rev-parse --show-toplevel)/.codex/run-hook.py" '
++                        + script
++                    ),
++                    "commandWindows": (
++                        "powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "
++                        '"$r=(git rev-parse --show-toplevel); '
++                        f"py -3 (Join-Path $r '.codex/run-hook.py') '{script}'\""
++                    ),
++                }
++                if "timeout" in handler:
++                    item["timeout"] = handler["timeout"]
++                rendered_handlers.append(item)
++            rendered["hooks"] = rendered_handlers
++            rendered_groups.append(rendered)
++        result[event] = rendered_groups
++    return {
++        "description": "Projeção gerada do núcleo canônico do evidence-gate; não editar diretamente.",
++        "hooks": result,
++    }
++
++
++def codex_runner() -> str:
++    return '''#!/usr/bin/env python3
++"""Executa um hook Bash do projeto de modo estável em Unix e Windows."""
++from __future__ import annotations
++
++import os
++from pathlib import Path
++import shutil
++import subprocess
++import sys
++
++
++def find_bash() -> str:
++    candidates = [
++        os.environ.get("CLAUDE_CODE_GIT_BASH_PATH"),
++        shutil.which("bash"),
++        r"C:\Program Files\Git\bin\bash.exe",
++        r"C:\Program Files\Git\usr\bin\bash.exe",
++    ]
++    for candidate in candidates:
++        if candidate and Path(candidate).is_file():
++            return str(candidate)
++    raise SystemExit("Git Bash/bash não encontrado; configure CLAUDE_CODE_GIT_BASH_PATH")
++
++
++def main() -> int:
++    if len(sys.argv) != 2 or Path(sys.argv[1]).name != sys.argv[1]:
++        print("uso: run-hook.py <nome-do-hook.sh>", file=sys.stderr)
++        return 2
++    root = Path(__file__).resolve().parents[1]
++    script = root / ".codex" / "hooks" / sys.argv[1]
++    if not script.is_file() or script.is_symlink():
++        print(f"hook ausente ou inválido: {script}", file=sys.stderr)
++        return 2
++    return subprocess.run([find_bash(), str(script)], cwd=Path.cwd()).returncode
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
++'''
++
++
++def claude_instructions(registry: dict[str, Any], workflows: list[dict[str, Any]]) -> str:
++    ids = ", ".join(workflow["id"] for workflow in workflows)
++    return f"""# evidence-gate — contrato de execução para Claude Code
++
++Este arquivo é gerado por `orchestration/render.py`; a fonte normativa é
++`orchestration/registry.json` e `orchestration/workflows/*.json`.
++
++## Estado e autoridade
++
++- A sessão termina, no máximo, em `CANDIDATE`; somente o check remoto
++  `{registry['invariants']['external_certifier']}` ligado ao SHA pode autorizar merge.
++- Agentes de leitura podem trabalhar em paralelo, até
++  {registry['invariants']['read_parallelism_cap']} threads; escrita é serializada.
++- `tdd` e `implementador` escrevem em worktree isolada. Autor não certifica a própria mudança.
++- Revisão e refutação recebem o artefato cru e resultados executados, não apenas o resumo do autor.
++- Lacuna de ferramenta, plataforma ou pré-condição é `NOT_VERIFIED`, nunca sucesso.
++- O ciclo de correção é limitado a {registry['invariants']['correction_round_cap']} rodadas.
++
++## Seleção de workflow
++
++Workflows canônicos: {ids}.
++
++- Use `investigation-only` para parecer sem escrita.
++- Use `standard-change` para mudança não trivial comum.
++- Use `high-risk-change` para autorização, entrada não confiável, dependências,
++  instalação privilegiada, supply chain ou trust boundary.
++
++Consulte `docs/architecture/workflow-graphs.generated.md` para o grafo exato e
++`docs/architecture/orquestracao-multirruntime.md` para os limites da arquitetura.
++"""
++
++
++def codex_instructions(registry: dict[str, Any], workflows: list[dict[str, Any]]) -> str:
++    ids = ", ".join(workflow["id"] for workflow in workflows)
++    return f"""# evidence-gate — instruções de projeto para Codex
++
++Fonte normativa: `orchestration/registry.json` e `orchestration/workflows/*.json`.
++As projeções sob `.codex/`, `.agents/` e este arquivo são geradas; não editar manualmente.
++
++## Acordos operacionais
++
++- Estado terminal local: `{registry['invariants']['terminal_state']}`. Certificação é externa,
++  pelo check `{registry['invariants']['external_certifier']}` vinculado ao SHA.
++- No máximo {registry['invariants']['read_parallelism_cap']} subagentes de leitura em paralelo.
++- Nunca execute dois agentes escritores no mesmo workspace. Use escrita serializada e
++  worktree/branch isolada quando houver alteração concorrente.
++- `tdd` produz o experimento RED; `implementador` materializa a menor correção; ambos são
++  avaliados por agentes read-only distintos.
++- Ausência de dependência, plataforma ou tratamento exercitável é `NOT_VERIFIED`, não PASS.
++- No máximo {registry['invariants']['correction_round_cap']} ciclos sem nova evidência.
++- Não faça merge com base em autoavaliação. O agente entrega um candidato.
++
++## Workflows disponíveis
++
++{ids}
++
++Leia `docs/architecture/workflow-graphs.generated.md` para a topologia executável e
++`docs/method/orquestracao-e-
