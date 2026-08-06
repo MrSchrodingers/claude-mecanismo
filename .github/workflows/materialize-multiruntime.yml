@@ -2,13 +2,13 @@ name: materialize-multiruntime
 
 on:
   push:
-    branches: [agent/orquestracao-multirruntime]
+    branches: [main]
 
 permissions:
   contents: write
 
 concurrency:
-  group: materialize-multiruntime
+  group: materialize-multiruntime-main
   cancel-in-progress: false
 
 jobs:
@@ -49,10 +49,10 @@ jobs:
           bash tests/unit/regressao-gate.sh
           bash tests/unit/run.sh
 
-          rm -rf .bootstrap .github/workflows/materialize-multiruntime.yml
+          rm -rf .bootstrap .bootstrap-trigger .github/workflows/materialize-multiruntime.yml
           git add -A
           git diff --cached --check
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git commit -m 'feat: estrutura orquestração multirruntime baseada em evidências'
-          git push origin HEAD:agent/orquestracao-multirruntime
+          git push origin HEAD:main
