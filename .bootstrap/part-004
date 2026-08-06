@@ -1,0 +1,469 @@
+escritores no mesmo workspace podem
++introduzir conflitos, estados intermediários não reproduzíveis e atribuição ambígua.
++
++Formalmente, para qualquer grupo paralelo `G`:
++
++\[
++\sum_{n \in G} writes(n) = 0.
++\]
++
++`TDD` e `implementador` usam worktree em Claude Code. Em Codex, a política de projeto exige
++workspace separado quando houver escrita concorrente; o runtime não deve ser interpretado
++como prova de isolamento apenas porque o arquivo do agente declara `sandbox_mode`.
++
++## Estados e ciclos
++
++A cadeia padrão é:
++
++```text
++classify -> investigate/map -> plan -> RED -> implement -> deterministic tests
++         -> independent review/refutation -> evidence -> CANDIDATE
++```
++
++A cadeia de alto risco adiciona threat model, mutation testing e nova auditoria de segurança.
++O ciclo de correção retorna de `evidence` para `implement` no máximo duas vezes. Ausência de
++progresso exige rebaixar escopo, revisar premissas ou reprovar; não autoriza iteração ilimitada.
++
++## Fronteiras por runtime
++
++### Claude Code Desktop e CLI
++
++- `.claude/agents` contém agentes de projeto, porque controles em agentes de plugin não possuem
++  a mesma força operacional para `permissionMode`, hooks e MCP;
++- `.claude/settings.json` usa exec form para caminhos, evitando reinterpretação pelo shell;
++- hooks e agentes de projeto exigem confiança no workspace;
++- o modo selecionado pela interface pode prevalecer sobre defaults do arquivo.
++
++### Codex
++
++- `.codex/agents/*.toml` contém nome, descrição, instruções, modelo, esforço e sandbox;
++- `.codex/hooks.json` é carregado somente em projeto confiável e cada definição não gerenciada
++  exige revisão de confiança;
++- `.agents/skills` é a projeção de Skills;
++- `AGENTS.md` fornece o contrato de projeto, respeitando a precedência nativa do runtime.
++
++## O que é verificado
++
++`tests/unit/runtime-ports.py` verifica:
++
++- registry, fontes e frontmatter;
++- leitores sem ferramentas de escrita e escritores isolados;
++- integridade e alcançabilidade dos grafos;
++- ausência de escritores em grupos paralelos;
++- projeções Claude/Codex e parsing JSON/TOML;
++- hooks referenciando arquivos existentes;
++- legados semânticos bloqueados;
++- governança pública mínima.
++
++Mutation, regressão, properties e CI continuam necessários para propriedades comportamentais.
++
++## Limites
++
++- a topologia ainda não possui corpus comparativo de eficácia;
++- o mesmo mantenedor define boa parte de agentes, testes e verificadores;
++- modelos distintos não garantem independência estatística;
++- hooks executam com a autoridade do processo;
++- `sandbox_mode` e worktree reduzem superfície, mas não equivalem a uma trust boundary de SO;
++- Desktop, CLI e Codex evoluem: a projeção precisa acompanhar contratos oficiais e manter testes
++  negativos para incompatibilidades.
+diff --git a/docs/guides/windows-claude-code-desktop.md b/docs/guides/windows-claude-code-desktop.md
+new file mode 100644
+index 0000000..0dfceb6
+--- /dev/null
++++ b/docs/guides/windows-claude-code-desktop.md
+@@ -0,0 +1,148 @@
++# Windows: configurar o evidence-gate no Claude Code Desktop
++
++## Pré-requisitos
++
++1. Windows x64 ou ARM64 suportado pelo Claude Desktop.
++2. Claude Desktop atualizado.
++3. Git for Windows instalado, incluindo Git Bash.
++4. Python 3 e `jq` disponíveis no Git Bash para executar a suíte completa.
++5. Repositório clonado localmente.
++
++O Claude Desktop exige Git for Windows na primeira abertura da aba **Code**. Reinicie o app
++após instalar o Git.
++
++## 1. Clonar e validar o repositório
++
++Abra PowerShell:
++
++```powershell
++git clone https://github.com/MrSchrodingers/evidence-gate.git
++Set-Location evidence-gate
++python .\orchestration\render.py --check
++```
++
++No Git Bash, valide os componentes principais:
++
++```bash
++bash tests/unit/runtime-ports.sh
++bash tests/unit/managed.sh
++bash tests/mutation/install.sh
++```
++
++Um ambiente sem locale alternativo pode produzir `NOT_VERIFIED` na suíte metamórfica de
++locale. Isso não deve ser reclassificado como sucesso.
++
++## 2. Abrir no Claude Desktop
++
++1. Abra o Claude Desktop e selecione a aba **Code**.
++2. Crie uma nova sessão.
++3. Em **Environment**, escolha **Local**.
++4. Em **Project folder**, selecione a pasta `evidence-gate`.
++5. Comece em **Plan** para a primeira auditoria.
++6. Aceite a confiança do workspace somente depois de revisar `.claude/settings.json`,
++   `.claude/hooks/` e `.claude/agents/`.
++
++A configuração de projeto é carregada diretamente do repositório. Não é necessário copiar
++agentes ou hooks para o perfil global para usar este projeto.
++
++## 3. Verificar o runtime
++
++Na sessão, abra o terminal integrado com `Ctrl+`` e execute:
++
++```bash
++python3 orchestration/render.py --check
++bash tests/unit/runtime-ports.sh
++```
++
++No chat do Code tab:
++
++```text
++Liste as instruções de projeto carregadas, os agentes disponíveis e as fontes dos hooks.
++Não altere arquivos.
++```
++
++Use `/hooks` para conferir as definições carregadas. Abra o painel de agentes/subagentes para
++verificar os agentes de projeto. A interface e a CLI usam os mesmos arquivos de configuração.
++
++## 4. Primeiro workflow
++
++Para uma mudança comum, envie:
++
++```text
++Use o workflow standard-change do evidence-gate. Primeiro execute investigador e
++mapeador-dependencias em paralelo, sem escrita. Apresente o plan gate. Depois use tdd e
++implementador de forma serializada e em worktree. Finalize com revisor-codigo e refutador
++independentes. O resultado local máximo é CANDIDATE; não declare merge sem verify-pr no SHA.
++```
++
++Para instalador, autorização, parser, dependência ou CI, substitua por `high-risk-change`.
++
++## 5. Sessões paralelas
++
++O Desktop permite várias sessões independentes e isolamento Git. Use paralelismo para
++investigação, mapeamento e avaliação. Não peça a duas sessões para editar o mesmo conjunto de
++arquivos. Para escrita concorrente legítima, use branches/worktrees disjuntas e uma etapa de
++integração explícita.
++
++## 6. Configuração global opcional
++
++A projeção de projeto é a opção mais auditável. Para instalar também a configuração canônica
++em `%USERPROFILE%\.claude`, execute no PowerShell:
++
++```powershell
++Set-ExecutionPolicy -Scope Process Bypass
++.\install\apply-claude-global.ps1 -DryRun
++.\install\apply-claude-global.ps1
++.\install\apply-claude-global.ps1 -Verify
++```
++
++O wrapper localiza Git Bash. Caso ele esteja em caminho não padrão:
++
++```powershell
++$env:CLAUDE_CODE_GIT_BASH_PATH = 'C:\Program Files\Git\bin\bash.exe'
++.\install\apply-claude-global.ps1 -Verify
++```
++
++A instalação global permanece `governed=user`: o usuário pode editar `%USERPROFILE%\.claude`.
++Ela não substitui managed settings nem uma raiz de confiança administrativa.
++
++## 7. Diagnóstico
++
++### Git Bash não encontrado
++
++Confirme:
++
++```powershell
++Test-Path 'C:\Program Files\Git\bin\bash.exe'
++```
++
++Defina `CLAUDE_CODE_GIT_BASH_PATH` e reinicie o Claude Desktop, porque sessões locais herdam
++o ambiente disponível quando o app inicia.
++
++### Hook não executa
++
++1. confira `python orchestration/render.py --check`;
++2. abra `/hooks` e revise a confiança da definição;
++3. use modo Verbose ou o log de debug;
++4. confira `jq`, `bash`, `python3` e os caminhos do projeto;
++5. não transforme ferramenta ausente em PASS.
++
++### Agente de leitura tenta editar
++
++Interrompa a sessão. Verifique se o agente veio de `.claude/agents`, não de uma cópia de
++plugin, e se `permissionMode: plan` está presente. O modo selecionado no Desktop também
++importa. A independência continua exigindo inspeção do artefato e revisão externa.
++
++## 8. Encerramento correto
++
++Antes de abrir PR:
++
++```bash
++python3 orchestration/render.py --check
++bash install/manifest.sh install/manifest.lock
++bash scripts/status.sh --check
++```
++
++Abra o PR, aguarde `verify-pr` no head final e revise as conclusões contra as limitações. O
++Desktop pode monitorar CI e auto-merge, mas a autorização continua pertencendo ao ruleset e
++não à sessão local.
+diff --git a/docs/method/orquestracao-e-avaliacao.md b/docs/method/orquestracao-e-avaliacao.md
+new file mode 100644
+index 0000000..70c81d3
+--- /dev/null
++++ b/docs/method/orquestracao-e-avaliacao.md
+@@ -0,0 +1,104 @@
++# Método de orquestração e avaliação
++
++## Princípio epistemológico
++
++Uma resposta de modelo é uma hipótese operacional. O sistema procura convertê-la em artefato,
++observações e condições de refutação. A separação central é:
++
++\[
++proposal \neq verification \neq authorization.
++\]
++
++Um subagente crítico pode aumentar diversidade de contexto, mas não é um verificador externo
++no sentido forte. A literatura sobre LLM-Modulo recomenda combinar modelos probabilísticos com
++verificadores externos; GLoRe também mostra que localizar onde corrigir melhora quando existe
++feedback externo. Esses resultados motivam a separação, mas não provam que esta implementação
++melhora software em todos os domínios.
++
++## Contrato de uma execução
++
++Para uma mudança `x`, a aceitação local exige:
++
++\[
++Preconditions(x) \land TreatmentApplied(x) \land OracleDiscriminating(x)
++\land TestsPass(x) \land ReviewCompleted(x).
++\]
++
++A autorização remota acrescenta vínculo ao snapshot e política externa:
++
++\[
++Mergeable(x) \iff Candidate(x) \land CI(SHA_x)=success \land Required(CI).
++\]
++
++Se uma dependência do oráculo não existe, o resultado é `NOT_VERIFIED`. Se uma variante
++ambiental opcional não existe, o caso pode ser `SKIP` somente quando outra variante válida
++exercita a propriedade e a guarda de cobertura continua verdadeira.
++
++## Seleção por risco
++
++O classificador escolhe o menor workflow que cobre a superfície:
++
++- `investigation-only`: nenhuma escrita;
++- `standard-change`: comportamento não trivial, integração ou refatoração;
++- `high-risk-change`: autorização, entrada não confiável, instalação privilegiada,
++  dependência, parser, CI, supply chain ou fronteira de confiança.
++
++Especialistas são acionados por gatilhos observáveis, não por ornamentação:
++
++- algoritmo/estrutura: `analista-otimalidade`;
++- fila/pipeline: `analista-fluxos`;
++- UI: `revisor-frontend`;
++- superfície de ataque: `auditor-seguranca`.
++
++## Avaliadores
++
++A avaliação combina sinais com falhas correlacionadas diferentes:
++
++1. regressão por contraexemplo;
++2. controle negativo;
++3. mutation testing atribuível;
++4. propriedades e metamorfismo;
++5. scanner e lint;
++6. revisão de código;
++7. refutação do argumento e do oráculo;
++8. CI em ambiente separado;
++9. política remota sobre o SHA.
++
++Nenhum item isolado implica correção universal. A conclusão é restrita ao domínio exercitado.
++
++## Métricas futuras
++
++O projeto ainda precisa comparar o harness contra um baseline menor em corpus congelado. A
++unidade experimental deve ser a tarefa, com seeds, testes ocultos e análise de pares. Métricas
++mínimas:
++
++- taxa de tarefa resolvida;
++- defeitos escapados;
++- mutantes mortos;
++- custo computacional e humano;
++- tempo até candidato;
++- número de ciclos de correção;
++- incidência de `NOT_VERIFIED`;
++- regressões introduzidas;
++- segurança e robustez por classe de risco.
++
++Relatórios devem separar análise confirmatória de exploração e registrar hipóteses antes do
++experimento. Sem corpus, a arquitetura é uma decisão fundamentada e mecanicamente testada, não
++uma demonstração de superioridade.
++
++## Referências primárias e oficiais
++
++Acesso em 6 de agosto de 2026.
++
++1. Kambhampati, S. et al. “Position: LLMs Can’t Plan, But Can Help Planning in LLM-Modulo
++   Frameworks.” ICML 2024, PMLR 235. https://proceedings.mlr.press/v235/kambhampati24a.html
++2. Havrilla, A. et al. “GLoRe: When, Where, and How to Improve LLM Reasoning via Global and
++   Local Refinements.” ICML 2024, PMLR 235. https://proceedings.mlr.press/v235/havrilla24a.html
++3. Yehudai, A. et al. “Survey on Evaluation of LLM-based Agents.” arXiv:2503.16416, 2025.
++   https://arxiv.org/abs/2503.16416
++4. Anthropic. Claude Code documentation: Desktop, hooks, agents, skills and settings.
++   https://code.claude.com/docs/
++5. OpenAI. Codex documentation: subagents, hooks, skills and `AGENTS.md`.
++   https://developers.openai.com/codex/
++6. Jia, Y.; Harman, M. “An Analysis and Survey of the Development of Mutation Testing.” IEEE
++   TSE 37(5), 2011. https://doi.org/10.1109/TSE.2010.62
+diff --git a/docs/status.generated.md b/docs/status.generated.md
+index 83f5d03..6b48c5c 100644
+--- a/docs/status.generated.md
++++ b/docs/status.generated.md
+@@ -10,12 +10,13 @@ O README referencia este arquivo em vez de duplicar numeros.
+ | `tests/unit/regressao-gate.sh` | 41 | 0 |
+ | `tests/unit/document-tools.sh` | 21 | 0 |
+ | `tests/unit/supply-chain.sh` | 6 | 0 |
+-| `tests/unit/reprodutibilidade.sh` | variavel (ambiente) | 0 |
++| `tests/unit/reprodutibilidade.sh` | variavel (ambiente) | 0 ou 2 (ambiente) |
+ | `tests/unit/concorrencia.sh` | 8 | 0 |
+ | `tests/unit/claims.sh` | 37 | 0 |
+ | `tests/unit/propriedades.sh` | 22 | 0 |
+ | `tests/unit/fronteira-externa.sh` | 11 | 0 |
+-| `tests/unit/managed.sh` | 65 | 0 |
++| `tests/unit/runtime-ports.sh` | 150 | 0 |
++| `tests/unit/managed.sh` | 78 | 0 |
+ | `tests/unit/run.sh` | 53 | 0 |
+ 
+ ## Mutacao
+@@ -24,7 +25,7 @@ O README referencia este arquivo em vez de duplicar numeros.
+ |---|---:|---:|
+ | gate | 13 | 0 |
+ | contrato de subagente | 9 | 0 |
+-| instalador | 3 | 0 |
++| instalador | 7 | 0 |
+ | fronteira externa | 7 | 0 |
+ 
+ ## Componentes
+@@ -49,10 +50,14 @@ O README referencia este arquivo em vez de duplicar numeros.
+ - sem corpus de desfecho: nenhuma afirmacao sobre eficacia de engenharia
+ - sem auditoria autoralmente independente: a CI e observador ambiental
+ - sem sandbox: parsers de documento rodam com a autoridade do usuario
+-- deploy managed: `DeployFail => ActiveState inalterado` vale para falha OBSERVADA
+-  (portao, jq, cp, chmod, chown, mv). NAO cobre terminacao que o shell nao observa -
+-  SIGKILL ou queda entre os dois renames da arvore deixa $OPT ausente. Fechar exigiria
+-  $OPT como symlink trocado por um unico rename, mudando layout, --verify e --revert
++- deploy managed: para falha OBSERVADA com rollback bem-sucedido, o estado ativo
++  retorna ao estado anterior; se o proprio rollback falhar, o instalador retorna 70,
++  declara `ROLLBACK_FAILED` e preserva o material de recuperacao. O contrato nao cobre
++  terminacao que o shell nao observa: SIGKILL ou queda entre renames ainda exige
++  intervencao externa e uma futura troca atomica por ponteiro/symlink
++- equivalencia multirruntime e estrutural, nao semantica: as projecoes Claude/Codex
++  sao derivadas e comparadas byte a byte, mas os runtimes nao foram avaliados em corpus
++  pareado nem produzem garantias identicas de hooks, sandbox ou permissoes
+ - o ruleset IMPOE, mas quem tem admin pode DESATIVA-LO: nao ha bypass dentro da
+   regra (medido), e nao que a regra seja irremovivel
+ 
+@@ -80,3 +85,9 @@ O README referencia este arquivo em vez de duplicar numeros.
+   contem renames verificados, e o material de rollback so e descartado quando arvore e
+   politica ja estao no lugar. MG17 usa `MANAGED_FAILPOINT` para provocar a falha
+   pos-publicacao; MI3 e o mutante atribuivel
++- `primeiro deploy falho deixava arvore nova`: MG19 cobre ausencia inicial e MI4
++  remove deliberadamente o cleanup para provar que o oraculo discrimina o defeito
++- `permissoes eram inferidas por gravabilidade`: conformidade agora compara tipo,
++  owner, group e modo objetivos; MG20 e MI5 cobrem modos 0777/0666 sem alterar bytes
++- `falha do proprio rollback era colapsada em deploy fail`: agora sai 70 com
++  ROLLBACK_FAILED e preserva recuperacao; MG21, MI6 e MI7 separam status e material
+diff --git a/evidence/hooks/verify-gate.sh b/evidence/hooks/verify-gate.sh
+index 246929f..fc8d882 100755
+--- a/evidence/hooks/verify-gate.sh
++++ b/evidence/hooks/verify-gate.sh
+@@ -319,7 +319,7 @@ if [ -n "$LACUNAS" ]; then
+   registra "gap" "lacunas:$LACUNAS"
+   reporta "GATE - LACUNA DE COBERTURA, nao falha de codigo.$LACUNAS
+ Nenhuma verificacao externa cobriu esses caminhos neste turno.
+-Estado: NAO VERIFICADO - declare a lacuna ao usuario. Nao diga verde nem vermelho.$AVISO_REPO"
++Estado: NAO VERIFICADO / NOT_VERIFIED - declare a lacuna ao usuario. Nao diga verde nem vermelho.$AVISO_REPO"
+ fi
+ registra "pass" "verificadores:$ECOS"
+ # passou, mas ha comando do repo nao aprovado: avisar sem bloquear
+diff --git a/execution/agents/analista-fluxos.md b/execution/agents/analista-fluxos.md
+index aaaf8ac..a5257a1 100644
+--- a/execution/agents/analista-fluxos.md
++++ b/execution/agents/analista-fluxos.md
+@@ -3,7 +3,9 @@ name: analista-fluxos
+ description: Use quando a tarefa envolve fila, pipeline, automacao (n8n/Temporal), funil, dimensionamento de workers/conexoes, ou diagnostico de latencia/throughput. Modela o fluxo como rede de filas e localiza o gargalo. Read-only, conclusao so sobre dado medido.
+ tools: Read, Grep, Glob, Bash
+ model: opus
+-memory: user
++memory: project
++permissionMode: plan
++maxTurns: 24
+ color: blue
+ ---
+ 
+diff --git a/execution/agents/analista-otimalidade.md b/execution/agents/analista-otimalidade.md
+index ae758dd..6805f73 100644
+--- a/execution/agents/analista-otimalidade.md
++++ b/execution/agents/analista-otimalidade.md
+@@ -3,7 +3,9 @@ name: analista-otimalidade
+ description: Analise de custo assintotico e de estrutura ANTES de implementar, quando a mudanca tem componente algoritmico, de estrutura de dados ou de topologia de modulos com alto custo de reversao. Compara o custo da solucao com o LIMITE INFERIOR do problema (nao com a versao anterior), verifica invariantes e contratos, e MEDE quando a premissa de desempenho nao esta estabelecida. Read-only.
+ tools: Read, Grep, Glob, Bash
+ model: opus
+-memory: user
++memory: project
++permissionMode: plan
++maxTurns: 24
+ color: cyan
+ ---
+ 
+diff --git a/execution/agents/auditor-seguranca.md b/execution/agents/auditor-seguranca.md
+index 053f2c4..a5719bc 100644
+--- a/execution/agents/auditor-seguranca.md
++++ b/execution/agents/auditor-seguranca.md
+@@ -3,7 +3,9 @@ name: auditor-seguranca
+ description: Analise PROFUNDA de seguranca, com SCANNER EXECUTADO. Acionar quando o diff abre superficie nova (entrada nao-confiavel, autenticacao/autorizacao, cripto/segredo, deserializacao, parse de arquivo, sink de DOM) OU mexe em dependencia (manifesto/lockfile). Roda ruff --select S, pip-audit, npm audit e busca de segredo no historico; depois faz taint e threat model sobre o que a ferramenta apontou. Padroes de vuln de CODIGO com cara de CRUD (IDOR, mass-assignment) sao do revisor-codigo, em todo diff. Read-only, nunca corrige.
+ tools: Read, Grep, Glob, Bash, WebFetch, WebSearch
+ model: opus
+-memory: user
++memory: project
++permissionMode: plan
++maxTurns: 24
+ color: red
+ ---
+ 
+diff --git a/execution/agents/implementador.md b/execution/agents/implementador.md
+index e9fcdc3..e3a318b 100644
+--- a/execution/agents/implementador.md
++++ b/execution/agents/implementador.md
+@@ -3,6 +3,10 @@ name: implementador
+ description: Implementa uma mudanca ja investigada e planejada, seguindo um mini PRD e o grafo de dependencias fornecidos no prompt. Use depois de investigador e mapeador-dependencias, e antes dos revisores.
+ tools: Read, Write, Edit, Grep, Glob, Bash
+ model: sonnet
++memory: project
++permissionMode: acceptEdits
++maxTurns: 36
++isolation: worktree
+ color: green
+ ---
+ 
+diff --git a/execution/agents/investigador.md b/execution/agents/investigador.md
+index dad4ba6..2aee866 100644
+--- a/execution/agents/investigador.md
++++ b/execution/agents/investigador.md
+@@ -3,7 +3,9 @@ name: investigador
+ description: Use PROATIVAMENTE antes de qualquer correcao ou implementacao para investigar um problema e provar a hipotese com evidencia concreta. Especialista em reproduzir bugs, ler o codigo relevante e localizar a causa raiz. R

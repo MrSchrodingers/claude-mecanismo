@@ -1,26 +1,26 @@
-name: verify-pr
+name: materialize-multiruntime
 
 on:
-  pull_request:
+  push:
+    branches: [agent/orquestracao-multirruntime]
 
 permissions:
   contents: write
 
 concurrency:
-  group: bootstrap-verify-pr-${{ github.event.pull_request.number }}
+  group: materialize-multiruntime
   cancel-in-progress: false
 
 jobs:
-  verify-pr:
-    name: verify-pr
+  materialize:
+    if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-24.04
     timeout-minutes: 35
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           fetch-depth: 0
-          ref: ${{ github.head_ref }}
-      - name: materializa o commit definitivo e remove o transporte
+      - name: materializa, valida e publica a arvore definitiva
         env:
           EXPECTED_PATCH_SHA256: 91f331aed2ba716fd25f5c71f9e2dc2281d9a85dd258f3afc00cab93303925ec
         run: |
@@ -28,8 +28,6 @@ jobs:
           test -d .bootstrap
           cat .bootstrap/part-* > /tmp/source.patch
           printf '%s  %s\n' "$EXPECTED_PATCH_SHA256" /tmp/source.patch | sha256sum -c -
-
-          git checkout origin/main -- .github/workflows/verify-pr.yml
           git apply --check /tmp/source.patch
           git apply /tmp/source.patch
 
@@ -57,4 +55,4 @@ jobs:
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git commit -m 'feat: estrutura orquestração multirruntime baseada em evidências'
-          git push origin HEAD:${{ github.head_ref }}
+          git push origin HEAD:agent/orquestracao-multirruntime

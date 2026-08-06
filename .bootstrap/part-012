@@ -1,0 +1,402 @@
+avaliacao.md` para o contrato de evidência.
++"""
++
++
++def graph_markdown(workflows: list[dict[str, Any]]) -> str:
++    lines = [
++        "# Grafos de workflow gerados",
++        "",
++        "NAO EDITAR. Gerado por `orchestration/render.py` a partir de `orchestration/workflows/`.",
++        "",
++    ]
++    for workflow in workflows:
++        node_by_id = {node["id"]: node for node in workflow["nodes"]}
++        lines.extend([f"## `{workflow['id']}`", "", workflow["description"], "", "```mermaid", "flowchart TD"])
++        for node in workflow["nodes"]:
++            label = node["id"]
++            if node.get("agent"):
++                label += f"\n{node['agent']}"
++            if node.get("state"):
++                label += f"\n{node['state']}"
++            shape_left, shape_right = ("[[", "]]" ) if node["kind"] == "terminal" else ("[", "]")
++            lines.append(f"    {node['id']}{shape_left}{label}{shape_right}")
++        for source, target in workflow["edges"]:
++            lines.append(f"    {source} --> {target}")
++        if workflow.get("correction_edge"):
++            source, target = workflow["correction_edge"]
++            lines.append(f"    {source} -. correção limitada .-> {target}")
++        lines.extend(["```", "", "| Nó | Tipo | Agente | Escrita | Paralelo |", "|---|---|---|:---:|---|"])
++        for node in workflow["nodes"]:
++            lines.append(
++                f"| `{node['id']}` | {node['kind']} | {node.get('agent', '—')} | "
++                f"{'sim' if node.get('writes') else 'não'} | {node.get('parallel_group', '—')} |"
++            )
++        lines.append("")
++        # Referenciar node_by_id evita que grafos com arestas órfãs sejam renderizados silenciosamente.
++        for source, target in workflow["edges"]:
++            if source not in node_by_id or target not in node_by_id:
++                raise ProjectionError(f"aresta órfã em {workflow['id']}: {source}->{target}")
++    return "\n".join(lines).rstrip() + "\n"
++
++
++def build_projection() -> tuple[dict[str, bytes], set[str]]:
++    registry = load_registry()
++    workflows = load_workflows()
++    expected: dict[str, bytes] = {}
++    executable: set[str] = set()
++
++    agents = registry["agents"]
++    for name, spec in sorted(agents.items()):
++        source = ROOT / spec["source"]
++        metadata, body = parse_agent(source)
++        if metadata.get("name") != name:
++            raise ProjectionError(f"nome do registry diverge do frontmatter: {name}")
++        expected[f".claude/agents/{name}.md"] = source.read_bytes()
++        toml = "\n".join(
++            [
++                f"name = {json.dumps(name, ensure_ascii=False)}",
++                f"description = {json.dumps(str(metadata.get('description', '')), ensure_ascii=False)}",
++                f"model = {json.dumps(spec['codex_model'])}",
++                f"model_reasoning_effort = {json.dumps(spec['effort'])}",
++                f"sandbox_mode = {json.dumps('workspace-write' if spec['writes'] else 'read-only')}",
++                f"developer_instructions = {json.dumps(body, ensure_ascii=False)}",
++                "",
++            ]
++        )
++        expected[f".codex/agents/{name}.toml"] = toml.encode()
++
++    skills_root = ROOT / registry["skills_root"]
++    for source in sorted(path for path in skills_root.rglob("*") if path.is_file()):
++        relative = source.relative_to(skills_root)
++        content = source.read_bytes()
++        expected[str(Path(".claude/skills") / relative)] = content
++        expected[str(Path(".agents/skills") / relative)] = content
++
++    for name, source in sorted(hook_sources().items()):
++        content = source.read_bytes()
++        for prefix in (".claude/hooks", ".codex/hooks"):
++            path = str(Path(prefix) / name)
++            expected[path] = content
++            executable.add(path)
++
++    hooks = canonical_hooks()
++    expected[".claude/settings.json"] = json_text(
++        {
++            "env": {
++                "EVIDENCE_GATE_REPO": "${CLAUDE_PROJECT_DIR}",
++                "CLAUDE_ADAPTERS_DIR": "${CLAUDE_PROJECT_DIR}/execution/adapters/code",
++                "DOC_ADAPTERS_DIR": "${CLAUDE_PROJECT_DIR}/execution/adapters/documents",
++            },
++            "hooks": hooks,
++        }
++    ).encode()
++
++    expected[".codex/config.toml"] = (
++        "# Gerado por orchestration/render.py; não editar.\n"
++        "[features]\n"
++        "hooks = true\n\n"
++        "[agents]\n"
++        "enabled = true\n"
++        f"max_concurrent_threads_per_session = {registry['invariants']['read_parallelism_cap']}\n"
++        'default_subagent_model = "gpt-5.6"\n'
++        'default_subagent_reasoning_effort = "high"\n'
++    ).encode()
++    expected[".codex/hooks.json"] = json_text(codex_hooks(hooks)).encode()
++    expected[".codex/run-hook.py"] = codex_runner().encode()
++    executable.add(".codex/run-hook.py")
++
++    expected["CLAUDE.md"] = claude_instructions(registry, workflows).encode()
++    expected["AGENTS.md"] = codex_instructions(registry, workflows).encode()
++    expected["docs/architecture/workflow-graphs.generated.md"] = graph_markdown(workflows).encode()
++    graph_payload = {
++        "schema_version": 1,
++        "registry": "orchestration/registry.json",
++        "workflows": [{key: value for key, value in workflow.items() if key != "_source"} for workflow in workflows],
++    }
++    expected["evidence/graphs/workflows.generated.json"] = json_text(graph_payload).encode()
++    return expected, executable
++
++
++def managed_existing_paths() -> set[str]:
++    paths: set[str] = set()
++    for singleton in MANAGED_SINGLETONS:
++        if (ROOT / singleton).exists():
++            paths.add(singleton)
++    for prefix in MANAGED_PREFIXES:
++        directory = ROOT / prefix
++        if directory.exists():
++            paths.update(str(path.relative_to(ROOT)) for path in directory.rglob("*") if path.is_file())
++    return paths
++
++
++def check_projection(expected: dict[str, bytes], executable: set[str]) -> list[str]:
++    errors: list[str] = []
++    actual = managed_existing_paths()
++    for extra in sorted(actual - set(expected)):
++        errors.append(f"arquivo extra: {extra}")
++    for path, content in sorted(expected.items()):
++        target = ROOT / path
++        if not target.is_file():
++            errors.append(f"arquivo ausente: {path}")
++            continue
++        if target.read_bytes() != content:
++            errors.append(f"conteúdo divergente: {path}")
++        actual_exec = bool(target.stat().st_mode & 0o111)
++        expected_exec = path in executable
++        if actual_exec != expected_exec:
++            errors.append(f"modo executável divergente: {path}")
++    return errors
++
++
++def write_projection(expected: dict[str, bytes], executable: set[str]) -> None:
++    stale = managed_existing_paths() - set(expected)
++    for path in sorted(stale, reverse=True):
++        (ROOT / path).unlink()
++    for path, content in sorted(expected.items()):
++        target = ROOT / path
++        target.parent.mkdir(parents=True, exist_ok=True)
++        target.write_bytes(content)
++        target.chmod(0o755 if path in executable else 0o644)
++    for prefix in MANAGED_PREFIXES:
++        directory = ROOT / prefix
++        if directory.exists():
++            for child in sorted(directory.rglob("*"), reverse=True):
++                if child.is_dir() and not any(child.iterdir()):
++                    child.rmdir()
++
++
++def main() -> int:
++    parser = argparse.ArgumentParser()
++    parser.add_argument("--check", action="store_true", help="não escreve; reprova por drift")
++    args = parser.parse_args()
++    try:
++        expected, executable = build_projection()
++        if args.check:
++            errors = check_projection(expected, executable)
++            if errors:
++                for error in errors:
++                    print(f"PROJECTION_ERROR {error}")
++                return 1
++            print(f"projeções atualizadas: {len(expected)} arquivos")
++            return 0
++        write_projection(expected, executable)
++        errors = check_projection(expected, executable)
++        if errors:
++            raise ProjectionError("; ".join(errors))
++        print(f"projeções geradas: {len(expected)} arquivos")
++        return 0
++    except (OSError, ValueError, json.JSONDecodeError, yaml.YAMLError, ProjectionError) as exc:
++        print(f"renderização falhou: {exc}", file=sys.stderr)
++        return 1
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+diff --git a/orchestration/workflows/high-risk.json b/orchestration/workflows/high-risk.json
+new file mode 100644
+index 0000000..0421871
+--- /dev/null
++++ b/orchestration/workflows/high-risk.json
+@@ -0,0 +1,29 @@
++{
++  "id": "high-risk-change",
++  "description": "Autorizacao, entrada nao confiavel, dependencias, instalacao privilegiada ou fronteira de seguranca.",
++  "entry": "classify",
++  "nodes": [
++    {"id": "classify", "kind": "gate", "writes": false},
++    {"id": "investigate", "kind": "agent", "agent": "investigador", "writes": false, "parallel_group": "discovery"},
++    {"id": "map", "kind": "agent", "agent": "mapeador-dependencias", "writes": false, "parallel_group": "discovery"},
++    {"id": "threat-model", "kind": "agent", "agent": "auditor-seguranca", "writes": false, "parallel_group": "discovery"},
++    {"id": "plan-gate", "kind": "gate", "writes": false},
++    {"id": "red", "kind": "agent", "agent": "tdd", "writes": true},
++    {"id": "implement", "kind": "agent", "agent": "implementador", "writes": true},
++    {"id": "mutation", "kind": "deterministic", "writes": false},
++    {"id": "review", "kind": "agent", "agent": "revisor-codigo", "writes": false, "parallel_group": "evaluation"},
++    {"id": "refute", "kind": "agent", "agent": "refutador", "writes": false, "parallel_group": "evaluation"},
++    {"id": "security", "kind": "agent", "agent": "auditor-seguranca", "writes": false, "parallel_group": "evaluation"},
++    {"id": "evidence", "kind": "deterministic", "writes": false},
++    {"id": "candidate", "kind": "terminal", "state": "CANDIDATE", "writes": false}
++  ],
++  "edges": [
++    ["classify", "investigate"], ["classify", "map"], ["classify", "threat-model"],
++    ["investigate", "plan-gate"], ["map", "plan-gate"], ["threat-model", "plan-gate"],
++    ["plan-gate", "red"], ["red", "implement"], ["implement", "mutation"],
++    ["mutation", "review"], ["mutation", "refute"], ["mutation", "security"],
++    ["review", "evidence"], ["refute", "evidence"], ["security", "evidence"], ["evidence", "candidate"]
++  ],
++  "correction_edge": ["evidence", "implement"],
++  "correction_round_cap": 2
++}
+diff --git a/orchestration/workflows/investigation.json b/orchestration/workflows/investigation.json
+new file mode 100644
+index 0000000..2f3c9b2
+--- /dev/null
++++ b/orchestration/workflows/investigation.json
+@@ -0,0 +1,13 @@
++{
++  "id": "investigation-only",
++  "description": "Leitura, diagnostico ou parecer sem alteracao do repositorio.",
++  "entry": "question",
++  "nodes": [
++    {"id": "question", "kind": "gate", "writes": false},
++    {"id": "investigate", "kind": "agent", "agent": "investigador", "writes": false, "parallel_group": "analysis"},
++    {"id": "map", "kind": "agent", "agent": "mapeador-dependencias", "writes": false, "parallel_group": "analysis"},
++    {"id": "refute", "kind": "agent", "agent": "refutador", "writes": false},
++    {"id": "report", "kind": "terminal", "state": "ANALYSIS_COMPLETE", "writes": false}
++  ],
++  "edges": [["question", "investigate"], ["question", "map"], ["investigate", "refute"], ["map", "refute"], ["refute", "report"]]
++}
+diff --git a/orchestration/workflows/standard.json b/orchestration/workflows/standard.json
+new file mode 100644
+index 0000000..05d4600
+--- /dev/null
++++ b/orchestration/workflows/standard.json
+@@ -0,0 +1,25 @@
++{
++  "id": "standard-change",
++  "description": "Mudanca nao trivial com diagnostico, escrita serializada e avaliacao independente.",
++  "entry": "classify",
++  "nodes": [
++    {"id": "classify", "kind": "gate", "writes": false},
++    {"id": "investigate", "kind": "agent", "agent": "investigador", "writes": false, "parallel_group": "discovery"},
++    {"id": "map", "kind": "agent", "agent": "mapeador-dependencias", "writes": false, "parallel_group": "discovery"},
++    {"id": "plan", "kind": "gate", "writes": false},
++    {"id": "red", "kind": "agent", "agent": "tdd", "writes": true},
++    {"id": "implement", "kind": "agent", "agent": "implementador", "writes": true},
++    {"id": "test", "kind": "deterministic", "writes": false},
++    {"id": "review", "kind": "agent", "agent": "revisor-codigo", "writes": false, "parallel_group": "evaluation"},
++    {"id": "refute", "kind": "agent", "agent": "refutador", "writes": false, "parallel_group": "evaluation"},
++    {"id": "evidence", "kind": "deterministic", "writes": false},
++    {"id": "candidate", "kind": "terminal", "state": "CANDIDATE", "writes": false}
++  ],
++  "edges": [
++    ["classify", "investigate"], ["classify", "map"], ["investigate", "plan"], ["map", "plan"],
++    ["plan", "red"], ["red", "implement"], ["implement", "test"], ["test", "review"],
++    ["test", "refute"], ["review", "evidence"], ["refute", "evidence"], ["evidence", "candidate"]
++  ],
++  "correction_edge": ["evidence", "implement"],
++  "correction_round_cap": 2
++}
+diff --git a/package.json b/package.json
+deleted file mode 100644
+index 0967ef4..0000000
+--- a/package.json
++++ /dev/null
+@@ -1 +0,0 @@
+-{}
+diff --git a/quebrado.py b/quebrado.py
+deleted file mode 100644
+index 4454d00..0000000
+--- a/quebrado.py
++++ /dev/null
+@@ -1,2 +0,0 @@
+-def h():
+-    return indefinido
+diff --git a/scripts/status.sh b/scripts/status.sh
+index 410ce8d..9f2b427 100755
+--- a/scripts/status.sh
++++ b/scripts/status.sh
+@@ -16,7 +16,6 @@ export LC_ALL=C
+ OUT="docs/status.generated.md"; CHECK=0
+ [ "${1:-}" = "--check" ] && CHECK=1 || OUT="${1:-$OUT}"
+ 
+-conta(){ bash "$1" 2>&1 | grep -oE "PASS=[0-9]+" | tail -1 | cut -d= -f2; }
+ TMP="$(mktemp)"
+ {
+   printf '# Estado gerado\n\n'
+@@ -31,10 +30,17 @@ TMP="$(mktemp)"
+   for t in tests/unit/regressao-gate.sh tests/unit/document-tools.sh tests/unit/supply-chain.sh \
+            tests/unit/reprodutibilidade.sh tests/unit/concorrencia.sh \
+            tests/unit/claims.sh tests/unit/propriedades.sh tests/unit/fronteira-externa.sh \
+-           tests/unit/managed.sh tests/unit/run.sh; do
+-    bash "$t" >/dev/null 2>&1; rc=$?
+-    if grep -q 'EXPECTED=\$((' "$t"; then n="variavel (ambiente)"
+-    else n="$(conta "$t")"; fi
++           tests/unit/runtime-ports.sh tests/unit/managed.sh tests/unit/run.sh; do
++    saida_t="$(bash "$t" 2>&1)"; rc=$?
++    if [ "$t" = "tests/unit/reprodutibilidade.sh" ]; then
++      # O locale discriminante e uma capacidade ambiental. A suite retorna 0 quando a exercita,
++      # 2 quando o oraculo nao esta disponivel e 1 somente para refutacao real. O status precisa
++      # permanecer byte-estavel entre esses ambientes; a CI executa a suite separadamente e
++      # continua tratando 2 como gate nao verificado.
++      [ "$rc" -eq 0 ] || [ "$rc" -eq 2 ] || { echo "reprodutibilidade refutada ao gerar status" >&2; rm -f "$TMP"; exit 1; }
++      n="variavel (ambiente)"; rc="0 ou 2 (ambiente)"
++    elif grep -q 'EXPECTED=\$((' "$t"; then n="variavel (ambiente)"
++    else n="$(printf '%s\n' "$saida_t" | grep -oE 'PASS=[0-9]+' | tail -1 | cut -d= -f2)"; fi
+     printf '| `%s` | %s | %s |\n' "$t" "${n:-?}" "$rc"
+   done
+   printf '\n## Mutacao\n\n| Alvo | Mutantes | Exit |\n|---|---:|---:|\n'
+@@ -69,10 +75,14 @@ TMP="$(mktemp)"
+   printf -- '- sem corpus de desfecho: nenhuma afirmacao sobre eficacia de engenharia\n'
+   printf -- '- sem auditoria autoralmente independente: a CI e observador ambiental\n'
+   printf -- '- sem sandbox: parsers de documento rodam com a autoridade do usuario\n'
+-  printf -- '- deploy managed: `DeployFail => ActiveState inalterado` vale para falha OBSERVADA\n'
+-  printf -- '  (portao, jq, cp, chmod, chown, mv). NAO cobre terminacao que o shell nao observa -\n'
+-  printf -- '  SIGKILL ou queda entre os dois renames da arvore deixa $OPT ausente. Fechar exigiria\n'
+-  printf -- '  $OPT como symlink trocado por um unico rename, mudando layout, --verify e --revert\n'
++  printf -- '- deploy managed: para falha OBSERVADA com rollback bem-sucedido, o estado ativo\n'
++  printf -- '  retorna ao estado anterior; se o proprio rollback falhar, o instalador retorna 70,\n'
++  printf -- '  declara `ROLLBACK_FAILED` e preserva o material de recuperacao. O contrato nao cobre\n'
++  printf -- '  terminacao que o shell nao observa: SIGKILL ou queda entre renames ainda exige\n'
++  printf -- '  intervencao externa e uma futura troca atomica por ponteiro/symlink\n'
++  printf -- '- equivalencia multirruntime e estrutural, nao semantica: as projecoes Claude/Codex\n'
++  printf -- '  sao derivadas e comparadas byte a byte, mas os runtimes nao foram avaliados em corpus\n'
++  printf -- '  pareado nem produzem garantias identicas de hooks, sandbox ou permissoes\n'
+   printf -- '- o ruleset IMPOE, mas quem tem admin pode DESATIVA-LO: nao ha bypass dentro da\n'
+   printf -- '  regra (medido), e nao que a regra seja irremovivel\n'
+   printf '\n## Deixaram de ser limites (medidos em 2026-08-04)\n\n'
+@@ -101,6 +111,12 @@ TMP="$(mktemp)"
+   printf -- '  contem renames verificados, e o material de rollback so e descartado quando arvore e\n'
+   printf -- '  politica ja estao no lugar. MG17 usa `MANAGED_FAILPOINT` para provocar a falha\n'
+   printf -- '  pos-publicacao; MI3 e o mutante atribuivel\n'
++  printf -- '- `primeiro deploy falho deixava arvore nova`: MG19 cobre ausencia inicial e MI4\n'
++  printf -- '  remove deliberadamente o cleanup para provar que o oraculo discrimina o defeito\n'
++  printf -- '- `permissoes eram inferidas por gravabilidade`: conformidade agora compara tipo,\n'
++  printf -- '  owner, group e modo objetivos; MG20 e MI5 cobrem modos 0777/0666 sem alterar bytes\n'
++  printf -- '- `falha do proprio rollback era colapsada em deploy fail`: agora sai 70 com\n'
++  printf -- '  ROLLBACK_FAILED e preserva recuperacao; MG21, MI6 e MI7 separam status e material\n'
+ } > "$TMP"
+ 
+ if [ "$CHECK" -eq 1 ]; then
+diff --git a/servico.js b/servico.js
+deleted file mode 100644
+index 54b82a0..0000000
+--- a/servico.js
++++ /dev/null
+@@ -1 +0,0 @@
+-const a = 1;
+diff --git a/solto.py b/solto.py
+deleted file mode 100644
+index 7f70fc9..0000000
+--- a/solto.py
++++ /dev/null
+@@ -1,2 +0,0 @@
+-def g():
+-    return indefinido
+diff --git a/tests/mutation/install.sh b/tests/mutation/install.sh
+index 85c0839..5a5a325 100755
+--- a/tests/mutation/install.sh
++++ b/tests/mutation/install.sh
+@@ -13,12 +13,12 @@ ORIG="install/apply.sh"; REG="tests/unit/regressao-gate.sh"
+ # SEGUNDO ALVO: o instalador MANAGED, cuja garantia vive em outra suite. Sao arquivos e
+ # propriedades distintos - misturar os dois num unico par (ORIG, REG) faria um mutante do managed
+ # ser cobrado contra a regressao do gate, e o kill nunca seria atribuivel.
+-ORIG_M="install/apply-managed.sh"; REG_M="tests/unit/managed.sh"
++ORIG_M="install/apply-managed.sh"; REG_M="tests/unit/managed.sh"; REG_M_F="tests/unit/managed-focused.sh"
+ TMP="$(mktemp -d)"
+ trap 'cp -f "$TMP/orig.sh" "$ORIG" 2>/dev/null; cp -f "$TMP/orig-managed.sh" "$ORIG_M" 2>/dev/null; rm -rf "$TMP"' EXIT
+ cp -f "$ORIG" "$TMP/orig.sh"
+ cp -f "$ORIG_M" "$TMP/orig-managed.sh"
+-P=0; F=0; EXPECTED_MUTANTS=3
++P=0; F=0; EXPECTED_MUTANTS=7
+ 
+ echo "== baseline =="
+ if bash "$REG" >/dev/null 2>&1; then echo "  PASS  baseline verde"; else echo "  FAIL  baseline vermelho; abortando"; exit 1; fi
+@@ -65,7 +65,7 @@ if cmp -s "$TMP/orig-managed.sh" "$ORIG_M"; then
+ elif ! bash -n "$ORIG_M" 2>/dev/null; then
+   echo "  FAIL  MI2 nao compila"; F=$((F+1))
+ else
+-  out="$(bash "$REG_M" 2>&1)"; rc=$?
++  out="$(bash "$REG_M_F" MG15 2>&1)"; rc=$?
+   if [ "$rc" -eq 0 ]; then
+     echo "  FAIL  MI2 SOBREVIVEU - deploy reprovado altera a arvore 
