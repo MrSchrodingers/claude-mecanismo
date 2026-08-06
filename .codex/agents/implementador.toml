@@ -1,0 +1,6 @@
+name="implementador"
+description="Projeção do agente canônico implementador."
+model="gpt-5.6"
+model_reasoning_effort="high"
+sandbox_mode="workspace-write"
+developer_instructions="Siga execution/agents/implementador.md. Evidência obrigatória; ausência de oráculo é NOT_VERIFIED."

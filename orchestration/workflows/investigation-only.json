@@ -1,0 +1,1 @@
+{"id":"investigation-only","entry":"investigate","nodes":["investigate","map","refute","report"],"edges":[["investigate","refute"],["map","refute"],["refute","report"]]}

@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "architecture": "canonical-core-with-verified-projections",
+  "invariants": {
+    "single_writer": true,
+    "independent_review": true,
+    "author_cannot_certify_own_change": true,
+    "read_parallelism_cap": 4,
+    "correction_round_cap": 2,
+    "terminal_state": "CANDIDATE",
+    "external_certifier": "verify-pr"
+  },
+  "agents": {
+    "investigador": {"source": "execution/agents/investigador.md", "writes": false},
+    "mapeador-dependencias": {"source": "execution/agents/mapeador-dependencias.md", "writes": false},
+    "tdd": {"source": "execution/agents/tdd.md", "writes": true},
+    "implementador": {"source": "execution/agents/implementador.md", "writes": true},
+    "revisor-codigo": {"source": "execution/agents/revisor-codigo.md", "writes": false},
+    "refutador": {"source": "execution/agents/refutador.md", "writes": false},
+    "auditor-seguranca": {"source": "execution/agents/auditor-seguranca.md", "writes": false},
+    "analista-otimalidade": {"source": "execution/agents/analista-otimalidade.md", "writes": false},
+    "analista-fluxos": {"source": "execution/agents/analista-fluxos.md", "writes": false},
+    "revisor-frontend": {"source": "execution/agents/revisor-frontend.md", "writes": false}
+  },
+  "workflows": ["investigation-only", "standard-change", "high-risk-change"]
+}
