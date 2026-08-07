@@ -13,7 +13,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4 pinado: tag e mutavel
         with: { fetch-depth: 0 }
       - name: ferramentas dos adaptadores
         timeout-minutes: 6
@@ -21,13 +21,23 @@ jobs:
           set -euo pipefail
           export DEBIAN_FRONTEND=noninteractive
           python3 -m pip install --quiet 'ruff==0.15.5' 'pandas==2.2.3' 'openpyxl==3.1.5' 'pymupdf==1.27.1' 'packaging==25.0' 'pyyaml==6.0.2'
+          # EXCECAO DECLARADA - apt NAO pinado: `ubuntu-24.04` fixa a familia da imagem, nao
+          # o snapshot do repositorio apt. Fixar versoes apt contra um runner hospedado quebraria
+          # quando a imagem girasse. Isto compra auditabilidade, NAO hermeticidade; as versoes
+          # efetivamente observadas sao impressas abaixo. Hermeticidade exige imagem por digest
+          # ou repositorio apt snapshotado e permanece fora desta garantia.
           missing=()
           command -v pdftotext >/dev/null || missing+=(poppler-utils)
           command -v pandoc    >/dev/null || missing+=(pandoc)
           if [ "${#missing[@]}" -gt 0 ]; then
+            echo "instalando: ${missing[*]}"
             sudo timeout 180 apt-get -o Acquire::Retries=3 update -qq
             sudo timeout 180 apt-get -o Acquire::Retries=3 install -y -qq "${missing[@]}"
+          else
+            echo "poppler-utils e pandoc ja presentes na imagem; apt nao foi acionado"
           fi
+          echo "versoes de sistema observadas nesta execucao:"
+          pdftotext -v 2>&1 | head -1; pandoc --version | head -1
           ruff --version && node --version && jq --version
       - name: sintaxe de todo hook
         run: |
@@ -40,42 +50,48 @@ jobs:
         run: |
           rc=0
           for a in execution/adapters/code/*.json; do
-            jq -e . "$a" >/dev/null || rc=1
+            jq -e . "$a" >/dev/null || { echo "JSON invalido: $a"; rc=1; }
+            jq -e '.exec.command and .exec.args and .declared_effects and .rationale' "$a" >/dev/null \
+              || { echo "contrato incompleto: $a"; rc=1; }
+          done
+          for a in execution/adapters/documents/*.json; do
+            jq -e . "$a" >/dev/null || { echo "JSON invalido: $a"; rc=1; }
           done
           exit $rc
       - name: manifesto reflete a arvore
         run: |
           bash install/manifest.sh install/manifest.check >/dev/null
-          diff -u install/manifest.lock install/manifest.check
+          diff -u install/manifest.lock install/manifest.check \
+            || { echo "manifest.lock desatualizado - rode install/manifest.sh e commite"; exit 1; }
       - name: orquestracao multirruntime e projecoes
         run: bash tests/unit/runtime-ports.sh
-      - name: fronteira externa
+      - name: fronteira externa (o contexto do required check e unico)
         run: bash tests/unit/fronteira-externa.sh
       - name: cadeia de suprimentos
         run: bash tests/unit/supply-chain.sh
       - name: executor documental
         run: bash tests/unit/document-tools.sh
-      - name: reprodutibilidade
+      - name: reprodutibilidade (metamorfico)
         run: bash tests/unit/reprodutibilidade.sh
-      - name: raiz de confianca
+      - name: raiz de confianca (instalador managed, prefixo de ensaio)
         run: bash tests/unit/managed.sh
-      - name: propriedades
+      - name: propriedades (detectores invariantes a formatacao)
         run: bash tests/unit/propriedades.sh
-      - name: claim ledger
+      - name: claim ledger (evidencia citada existe)
         run: bash tests/unit/claims.sh
-      - name: concorrencia
+      - name: concorrencia (lock das suites)
         run: bash tests/unit/concorrencia.sh
-      - name: status gerado
+      - name: status gerado reflete a execucao
         run: bash scripts/status.sh --check
       - name: regressao do gate
         run: bash tests/unit/regressao-gate.sh
-      - name: mutacao gate
+      - name: validacao por mutacao (gate)
         run: bash tests/mutation/run.sh
-      - name: mutacao contrato
+      - name: validacao por mutacao (contrato de subagente)
         run: bash tests/mutation/contrato.sh
-      - name: mutacao instalador
+      - name: validacao por mutacao (instalador)
         run: bash tests/mutation/install.sh
-      - name: mutacao fronteira
+      - name: validacao por mutacao (fronteira externa)
         run: bash tests/mutation/fronteira.sh
       - name: suite legada
         run: bash tests/unit/run.sh

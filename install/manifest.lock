@@ -1,7 +1,7 @@
 # evidence-gate manifest - estado DESEJADO de ~/.claude
 # gerado por install/manifest.sh; conferido por install/verify.sh
 # tipo	origem	destino	sha256
-hook	control/hooks/artifact-discipline.sh	hooks/artifact-discipline.sh	e64fcd952cc75cf363d61d399d0271b6f644013bc37fd39fe76310a8739ececc
+hook	control/hooks/artifact-discipline.sh	hooks/artifact-discipline.sh	ed65b13a3ef01f819abbaedb612ad15f1138d6a3a8b58ef3dff20a52aa5787ea
 hook	control/hooks/fable-guard.sh	hooks/fable-guard.sh	8d4a0cb16ec0ca7fc5d7db8c73eec32d601a0c4848be4bf7590021255add277b
 hook	control/hooks/risk-trigger.sh	hooks/risk-trigger.sh	61a4c713fe597ee78ababa4441e9326f4c2de7448fcee4ff46d429541588827c
 hook	control/hooks/self-mod-audit.sh	hooks/self-mod-audit.sh	6267201c3434ce7a8f77cf50216a96bb303ce9abcedb0153558dbf001681fe0c

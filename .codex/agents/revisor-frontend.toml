@@ -1,0 +1,6 @@
+name="revisor-frontend"
+description="Projeção do agente canônico revisor-frontend."
+model="gpt-5.6-terra"
+model_reasoning_effort="high"
+sandbox_mode="read-only"
+developer_instructions="Siga execution/agents/revisor-frontend.md. Evidência obrigatória; ausência de oráculo é NOT_VERIFIED."

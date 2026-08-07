@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "default_activation": "off",
+  "selection": {
+    "mode": "evidence-gated",
+    "require_observable_trigger": true,
+    "require_repository_compatibility": true,
+    "require_version_compatibility": true,
+    "allow_blanket_injection": false,
+    "max_selected_skills_per_task": 1
+  },
+  "lifecycle": {
+    "states": ["quarantine", "candidate", "promoted", "deprecated", "rejected"],
+    "initial_state": "quarantine",
+    "promotion_requires": [
+      "paired_evaluation",
+      "fixed_repository_snapshot",
+      "deterministic_requirement_verifier",
+      "compatibility_manifest",
+      "negative_control",
+      "cost_measurement",
+      "context_interference_check"
+    ],
+    "deprecate_on": [
+      "negative_correctness_delta",
+      "version_mismatch",
+      "unresolved_reference",
+      "security_regression",
+      "verifier_invalidated"
+    ]
+  },
+  "claims": {
+    "skill_is_not_authority": true,
+    "skill_is_not_certifier": true,
+    "absence_of_gain_is_not_failure": true,
+    "self_generated_skill_requires_quarantine": true
+  }
+}

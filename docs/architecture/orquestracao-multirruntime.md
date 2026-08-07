@@ -2,33 +2,95 @@
 
 ## Modelo
 
-\[
-Runtime_r = Core + Projection(Core,r)
-\]
+A arquitetura separa um núcleo normativo das traduções específicas de runtime:
 
-O núcleo vive em `execution/` e `orchestration/`; `.claude/`, `.codex/`, `.agents/skills/`, `CLAUDE.md` e `AGENTS.md` são projeções determinísticas.
+```math
+\mathrm{Runtime}_r = \mathrm{Core} + \mathrm{Projection}(\mathrm{Core},r).
+```
+
+O núcleo vive em `execution/` e `orchestration/`. As projeções de agentes e configuração vivem em `.claude/`, `.codex/`, `CLAUDE.md` e `AGENTS.md`.
+
+Essa igualdade é arquitetural: significa que cada runtime recebe uma representação declarada do mesmo núcleo. Ela **não** implica equivalência semântica ou estatística entre Claude Code e Codex.
 
 ## Invariantes
 
 - agentes de leitura e avaliação podem ocorrer em paralelo;
 - nenhum escritor participa de grupo paralelo;
 - escrita é serializada;
-- `tdd` precede `implementador`;
-- revisão e refutação são posteriores à escrita;
-- autor não certifica;
-- no máximo duas rodadas de correção;
-- estado terminal local `CANDIDATE`.
+- `tdd` precede `implementador` no fluxo de mudança;
+- revisão e refutação ocorrem depois da escrita;
+- o autor não certifica a própria alteração;
+- há no máximo duas rodadas de correção no registry atual;
+- o estado terminal local é `CANDIDATE`;
+- certificação pertence ao gate externo `verify-pr`.
 
-Formalmente, para qualquer grupo paralelo `G`, `sum writes(n)=0`.
+Para qualquer grupo paralelo `G`:
+
+```math
+\sum_{n\in G}\mathrm{writes}(n)=0.
+```
+
+## Agentes
+
+As fontes canônicas dos agentes ficam em `execution/agents/*.md`.
+
+- Claude Code recebe wrappers em `.claude/agents/*.md`.
+- Codex recebe wrappers em `.codex/agents/*.toml`.
+- `orchestration/render.py --check` verifica a convergência do inventário declarado no registry com as duas projeções.
+
+A convergência verificada é estrutural: existência, inventário e configuração declarada. Sandboxing, permission modes, worktrees, tool semantics e comportamento do modelo permanecem propriedades de cada runtime.
+
+## Skills
+
+Skills canônicas vivem em `execution/skills/` e são governadas por `orchestration/skill-policy.json` e `orchestration/evaluation-protocol.json`.
+
+Elas **não são blanket-projected para todos os runtimes**. A política atual é `default_activation = off`, exige compatibilidade, gatilho observável e evidência pareada para promoção. Uma futura projeção ou mecanismo automático de seleção de skills deve ser tratado como nova superfície experimental e validado antes de ser incorporado ao registry.
+
+No fluxo de instalação global do Claude, as skills promovidas presentes no manifesto podem ser instaladas no destino global correspondente; isso não equivale a afirmar que existe hoje uma projeção de projeto `.agents/skills/` para Codex.
 
 ## Workflows
 
-`investigation-only`, `standard-change` e `high-risk-change` são definidos em JSON, renderizados em Mermaid e validados por testes.
+`investigation-only`, `standard-change` e `high-risk-change` são definidos em JSON em `orchestration/workflows/` e validados contra o registry.
 
-## Fronteiras
+O fluxo padrão mantém a separação:
 
-Agentes Claude são projetados em `.claude/agents`; agentes Codex em `.codex/agents/*.toml`. Skills canônicas são espelhadas. Declaração de sandbox e worktree não é prova de isolamento de sistema operacional.
+```text
+classify
+  -> investigate/map
+  -> plan
+  -> RED
+  -> implement
+  -> tests
+  -> review/refutation
+  -> evidence
+  -> CANDIDATE
+```
+
+Mudanças de alto risco acrescentam escrutínio de segurança, threat model e mecanismos adicionais de falsificação.
+
+## Fronteiras de autoridade
+
+Hooks, subagentes e verificações locais produzem feedback e evidência intermediária. Eles não são a autoridade externa de integração.
+
+A propriedade pretendida é:
+
+```math
+\mathrm{Mergeable}(x)
+\iff
+\mathrm{Candidate}(x)
+\land
+\mathrm{ValidEvidence}(x)
+\land
+\mathrm{FreshEvidence}(x)
+\land
+\mathrm{ExternalAuthorization}(x).
+```
 
 ## Limites
 
-Sem corpus comparativo, auditoria independente, sandbox real ou supply chain hermética. A convergência verificada é estrutural, não equivalência semântica universal.
+- projeções são estruturalmente verificadas, não demonstradas como comportamentalmente equivalentes;
+- worktree ou sandbox declarado não é prova de isolamento do sistema operacional;
+- política de usuário continua participando da cadeia de confiança fora do modo managed;
+- CI é auditável, mas não hermética;
+- ainda não existe corpus comparativo suficientemente amplo para provar eficácia externa;
+- utilidade de skills permanece uma hipótese a ser medida por condição, modelo, scaffold e tarefa.

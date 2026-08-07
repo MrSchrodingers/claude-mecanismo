@@ -25,12 +25,40 @@ Toda nova garantia deve incluir:
 Use `NOT_VERIFIED` quando uma dependência, plataforma ou pré-condição impedir o experimento.
 Não transforme ausência de tratamento em PASS.
 
+## Skills e mudanças de scaffold
+
+Adicionar um arquivo de skill não equivale a promover uma capacidade. Toda skill nova ou
+substancialmente alterada começa em `quarantine` e deve obedecer a
+`orchestration/skill-policy.json` e `docs/method/skill-evaluation-protocol.md`.
+
+Para promoção, o PR deve incluir ou apontar para evidência de:
+
+- baseline pareado `without_skill`/`with_skill` no mesmo snapshot;
+- requisito autocontido e independente do conteúdo da skill;
+- verificador determinístico com controle negativo;
+- compatibilidade de versão e proveniência;
+- custo e latência;
+- busca explícita por interferência contextual;
+- repetição suficiente quando o agente for estocástico.
+
+Uma mudança de modelo, scaffold, seletor ou orçamento invalida a interpretação causal de um
+contraste de skill se não for controlada. Resultados nulos ou negativos não podem ser omitidos.
+Skills auto-geradas permanecem em quarentena até avaliação externa.
+
+## Higiene do repositório
+
+Fixtures pertencem à suíte que as utiliza; não devem ser deixadas soltas na raiz. Bootstrap,
+artefatos de transporte e workflows temporários devem ser removidos no mesmo PR que os usa.
+`tests/unit/repository-hygiene.sh` mantém esse contrato executável.
+
 ## Fluxo recomendado
 
 ```bash
 python3 orchestration/render.py
 bash install/manifest.sh install/manifest.lock
 python3 orchestration/render.py --check
+python3 tests/unit/methodology.py
+bash tests/unit/repository-hygiene.sh
 bash tests/unit/runtime-ports.sh
 bash tests/unit/managed.sh
 bash tests/mutation/install.sh
