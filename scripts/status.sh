@@ -42,7 +42,7 @@ trap 'rm -f "$TMP"' EXIT
   printf '| fronteira externa | %s | %s |\n' "$mf" "$?"
 
   printf '\n## Componentes\n\n| Tipo | Qtd |\n|---|---:|\n'
-  awk -F'\t' '!/^#/{c[$1]++} END{for(t in c) printf "| %s | %s |\\n", t, c[t]}' install/manifest.lock | sort
+  awk -F'\t' '!/^#/{c[$1]++} END{for(t in c) printf "| %s | %s |\n", t, c[t]}' install/manifest.lock | sort
   printf '| **total** | **%s** |\n' "$(grep -vc '^#' install/manifest.lock)"
 
   printf '\n## Limites declarados\n\n'
