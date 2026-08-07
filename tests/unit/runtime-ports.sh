@@ -7,3 +7,4 @@ python3 tests/unit/governance-links.py
 python3 tests/unit/methodology.py
 python3 tests/mutation/methodology.py
 bash tests/unit/repository-hygiene.sh
+bash tests/unit/managed-root-trust.sh
