@@ -22,5 +22,11 @@
     "analista-fluxos": {"source": "execution/agents/analista-fluxos.md", "writes": false},
     "revisor-frontend": {"source": "execution/agents/revisor-frontend.md", "writes": false}
   },
+  "skill_governance": {
+    "policy": "orchestration/skill-policy.json",
+    "evaluation_protocol": "orchestration/evaluation-protocol.json",
+    "method": "docs/method/skill-evaluation-protocol.md",
+    "adr": "docs/adr/0025-skills-evidence-gated.md"
+  },
   "workflows": ["investigation-only", "standard-change", "high-risk-change"]
 }
