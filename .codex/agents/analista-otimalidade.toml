@@ -1,0 +1,6 @@
+name="analista-otimalidade"
+description="Projeção do agente canônico analista-otimalidade."
+model="gpt-5.6"
+model_reasoning_effort="high"
+sandbox_mode="read-only"
+developer_instructions="Siga execution/agents/analista-otimalidade.md. Evidência obrigatória; ausência de oráculo é NOT_VERIFIED."
