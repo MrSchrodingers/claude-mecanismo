@@ -1,6 +1,7 @@
 # Estado gerado
 
 NAO EDITAR. Gerado por `scripts/status.sh` a partir de execucao real.
+O README referencia este arquivo em vez de duplicar numeros.
 
 ## Suites
 
@@ -9,7 +10,7 @@ NAO EDITAR. Gerado por `scripts/status.sh` a partir de execucao real.
 | `tests/unit/regressao-gate.sh` | 41 | 0 |
 | `tests/unit/document-tools.sh` | 21 | 0 |
 | `tests/unit/supply-chain.sh` | 6 | 0 |
-| `tests/unit/reprodutibilidade.sh` | variavel | 0 ou 2 |
+| `tests/unit/reprodutibilidade.sh` | variavel (ambiente) | 0 |
 | `tests/unit/concorrencia.sh` | 8 | 0 |
 | `tests/unit/claims.sh` | 37 | 0 |
 | `tests/unit/propriedades.sh` | 22 | 0 |
