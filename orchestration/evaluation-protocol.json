@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "unit": "repository_task_trial",
+  "task_tuple": ["repository", "environment", "requirement", "skill_condition", "agent_scaffold", "model", "trial"],
+  "repository": {
+    "fixed_commit_required": true,
+    "container_or_immutable_environment_required": true
+  },
+  "requirement": {
+    "self_sufficient": true,
+    "acceptance_criteria_required": true,
+    "must_not_leak_skill_content": true,
+    "traceability_required": true
+  },
+  "verifier": {
+    "deterministic": true,
+    "execution_based": true,
+    "llm_as_judge_for_primary_outcome": false,
+    "keyword_only_checks_prohibited": true,
+    "file_existence_only_checks_prohibited": true,
+    "edge_cases_required": true,
+    "negative_control_required": true
+  },
+  "design": {
+    "paired_conditions": ["without_skill", "with_skill"],
+    "same_task_snapshot_between_conditions": true,
+    "same_environment_between_conditions": true,
+    "same_model_scaffold_between_paired_conditions": true,
+    "repeated_trials_required_for_stochastic_agents": true,
+    "record_execution_order": true,
+    "skill_selection_evaluated_separately": true
+  },
+  "metrics": {
+    "primary": ["requirement_pass_rate", "paired_correctness_delta"],
+    "secondary": ["token_cost", "wall_clock_latency", "tool_calls", "test_runs", "changed_files"],
+    "safety": ["security_regressions", "scope_violations", "context_interference_failures"],
+    "selection": ["selection_precision", "selection_recall", "unnecessary_injection_rate"]
+  },
+  "analysis": {
+    "report_discordant_pairs": true,
+    "report_confidence_intervals": true,
+    "separate_model_scaffold_results": true,
+    "no_universal_skill_claim_from_single_model": true,
+    "no_universal_scaffold_claim_from_single_scaffold": true,
+    "report_null_and_negative_results": true
+  }
+}
