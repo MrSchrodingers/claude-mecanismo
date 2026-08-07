@@ -12,35 +12,10 @@
 #
 # ESTE E O CONTEXTO EXIGIDO. O gemeo `verify-push.yml` roda a MESMA verificacao em `push` e NAO
 # deve ser exigido pelo ruleset.
-#
-# POR QUE SAO DOIS ARQUIVOS - defeito MEDIDO em 2026-08-04, nao preferencia de estilo.
-# Antes, um unico workflow `verify` disparava em `push` e em `pull_request` com um unico job
-# `verify`. Sobre o head do PR #4:
-#
-#   $ gh api repos/MrSchrodingers/evidence-gate/commits/ef307bf.../check-runs
-#   2
-#   verify | success | id=92057531104
-#   verify | success | id=92057522494
-#
-# DOIS check-runs homonimos sobre o MESMO SHA. Um required status check e identificado por NOME,
-# e qual dos dois a regra avalia quando eles DIVERGEM nao foi localizado na doc primaria
-# (limitacao registrada em C-016). A propriedade exigida nao e
-# `|{check-runs chamados verify}| >= 1`, e sim `|{check-runs com o nome exigido}| = 1`.
-# tests/unit/fronteira-externa.sh trava essa propriedade; tests/mutation/fronteira.sh a mata.
-#
-# POR QUE NAO REUSO (composite action / reusable workflow): ambos me obrigariam a AFIRMAR o nome
-# do check-run resultante sem poder verifica-lo na doc primaria - exatamente o defeito sendo
-# corrigido. Alem disso, composite action nao aceita `timeout-minutes` em passo (doc primaria
-# "Metadata syntax": run, shell, if, name, id, env, working-directory, uses, with,
-# continue-on-error). O preco desta escolha e a duplicacao dos passos entre os dois arquivos, e
-# esse preco e PAGO pelo caso FE3, que reprova se os dois divergirem.
 name: verify-pr
 on:
   pull_request:
   merge_group:
-# O GRUPO INCLUI O NOME DO WORKFLOW de proposito: se `verify-pr` e `verify-push` caissem no mesmo
-# grupo sobre o mesmo ref, um cancelaria o outro. Cancelar o run exigido deixa o check em
-# `cancelled` - nunca `success` - e o PR nao fecha mais.
 concurrency:
   group: verify-pr-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
@@ -48,26 +23,23 @@ permissions:
   contents: read
 jobs:
   verify-pr:
-    # `name:` explicito e IGUAL ao job id: com ou sem `name:`, o nome do check-run e o mesmo
-    # string, e a premissa sobre qual dos dois o GitHub usa deixa de decidir o resultado.
     name: verify-pr
     runs-on: ubuntu-24.04
-    # TETO, nao medicao: o provisionamento ja tem 6min proprios, e as suites somadas nao foram
-    # cronometradas na CI. Existe para que um travamento nao consuma o runner indefinidamente.
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4 pinado: tag e mutavel
         with: { fetch-depth: 0 }
       - name: ferramentas dos adaptadores
-        # ORCAMENTO: sem limite, este passo levou 14min52s numa execucao (apt-get). Um gate que
-        # pode consumir tempo indefinido por dependencia externa e um problema operacional, ainda
-        # que termine verde. Falha aqui e ENVIRONMENT_PROVISIONING_FAILED, nao reprovacao
-        # semantica do executor documental.
         timeout-minutes: 6
         run: |
           set -euo pipefail
           export DEBIAN_FRONTEND=noninteractive
           python3 -m pip install --quiet 'ruff==0.15.5' 'pandas==2.2.3' 'openpyxl==3.1.5' 'pymupdf==1.27.1' 'packaging==25.0' 'pyyaml==6.0.2'
+          # EXCECAO DECLARADA - apt NAO pinado: `ubuntu-24.04` fixa a familia da imagem, nao
+          # o snapshot do repositorio apt. Fixar versoes apt contra um runner hospedado quebraria
+          # quando a imagem girasse. Isto compra auditabilidade, NAO hermeticidade; as versoes
+          # efetivamente observadas sao impressas abaixo. Hermeticidade exige imagem por digest
+          # ou repositorio apt snapshotado e permanece fora desta garantia.
           missing=()
           command -v pdftotext >/dev/null || missing+=(poppler-utils)
           command -v pandoc    >/dev/null || missing+=(pandoc)
