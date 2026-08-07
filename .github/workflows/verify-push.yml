@@ -21,6 +21,11 @@ jobs:
           set -euo pipefail
           export DEBIAN_FRONTEND=noninteractive
           python3 -m pip install --quiet 'ruff==0.15.5' 'pandas==2.2.3' 'openpyxl==3.1.5' 'pymupdf==1.27.1' 'packaging==25.0' 'pyyaml==6.0.2'
+          # EXCECAO DECLARADA - apt NAO pinado: `ubuntu-24.04` fixa a familia da imagem, nao
+          # o snapshot do repositorio apt. Fixar versoes apt contra um runner hospedado quebraria
+          # quando a imagem girasse. Isto compra auditabilidade, NAO hermeticidade; as versoes
+          # efetivamente observadas sao impressas abaixo. Hermeticidade exige imagem por digest
+          # ou repositorio apt snapshotado e permanece fora desta garantia.
           missing=()
           command -v pdftotext >/dev/null || missing+=(poppler-utils)
           command -v pandoc    >/dev/null || missing+=(pandoc)
