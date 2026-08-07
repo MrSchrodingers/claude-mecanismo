@@ -17,7 +17,7 @@ for path in \
   fi
 done
 
-allowed_root='^(\.agents|\.claude|\.claude-plugin|\.codex|\.git|\.github|\.gitignore|AGENTS\.md|CLAUDE\.md|CONTRIBUTING\.md|LICENSE|README\.md|SECURITY\.md|control|docs|evidence|execution|install|orchestration|scripts|tests)$'
+allowed_root='^(\.agents|\.claude|\.claude-plugin|\.codex|\.git|\.github|\.gitignore|AGENTS\.md|CLAUDE\.md|CONTRIBUTING\.md|LICENSE|README\.md|README\.pt-BR\.md|SECURITY\.md|control|docs|evidence|execution|install|orchestration|scripts|tests)$'
 while IFS= read -r entry; do
   if ! [[ "$entry" =~ $allowed_root ]]; then
     echo "FAIL entrada nao declarada na raiz: $entry"
