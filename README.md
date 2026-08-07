@@ -119,7 +119,7 @@ with
 
 The model contributes probabilistic inference. The harness controls observable context, tools, authority, orchestration, acceptance criteria, and external verification.
 
-This distinction matters because measured agent performance is not a property of the base model alone. SWE-agent shows that the agent-computer interface can materially affect software-engineering performance [11]. Accordingly, `evidence-gate` treats **model**, **scaffold**, **task**, and **skill condition** as separate experimental variables.
+This distinction matters because measured agent performance is not a property of the base model alone. SWE-agent shows that the agent-computer interface can materially affect software-engineering performance [12]. Accordingly, `evidence-gate` treats **model**, **scaffold**, **task**, and **skill condition** as separate experimental variables.
 
 ### 2.2 Proposal is not verification
 
@@ -390,9 +390,9 @@ Machine-readable workflow definitions live in `orchestration/workflows/`.
 
 Recent empirical work does not support the assumption that adding procedural skill documents is universally beneficial.
 
-SWE-Skills-Bench evaluates roughly 565 requirement-driven SWE task instances using deterministic execution-based verification. In its reported results, 39 of 49 skills produced no pass-rate improvement, the mean gain was only +1.2 percentage points, and three skills degraded performance because guidance conflicted with the target project context [13].
+SWE-Skills-Bench evaluates roughly 565 requirement-driven SWE task instances using deterministic execution-based verification. In its reported results, 39 of 49 skills produced no pass-rate improvement, the mean gain was only +1.2 percentage points, and three skills degraded performance because guidance conflicted with the target project context [14].
 
-SkillsBench reports stronger average gains for curated skills across a broader multi-domain benchmark, but also reports substantial heterogeneity, negative deltas on some tasks, and no average benefit from self-generated skills [14].
+SkillsBench reports stronger average gains for curated skills across a broader multi-domain benchmark, but also reports substantial heterogeneity, negative deltas on some tasks, and no average benefit from self-generated skills [15].
 
 The policy consequence is intentionally conservative:
 
@@ -591,7 +591,7 @@ A verifier is stronger when a plausible invalid implementation is shown to fail 
 
 Mutation testing asks whether removing or weakening a guarantee is detected by the suite. The repository uses attributable mutants for several critical mechanisms, including the external gate, subagent contract, installer behavior, and skill methodology.
 
-Mutation testing is not a proof of correctness. It is evidence that the suite distinguishes selected faulty variants from the reference behavior, consistent with the mutation-testing literature [15].
+Mutation testing is not a proof of correctness. It is evidence that the suite distinguishes selected faulty variants from the reference behavior, consistent with the mutation-testing literature [16].
 
 ### 8.5 Metamorphic checks
 
@@ -601,7 +601,7 @@ Where a single golden output is inappropriate, metamorphic tests validate relati
 
 Authoring and evaluation are separated. Reviewers inspect the artifact and raw execution evidence rather than accepting the implementer's summary as ground truth.
 
-This is structurally aligned with verifier-backed approaches such as LLM-Modulo, where generative models are coupled to external verification rather than treated as reliable self-certifiers [12].
+This is structurally aligned with verifier-backed approaches such as LLM-Modulo, where generative models are coupled to external verification rather than treated as reliable self-certifiers [13].
 
 ---
 
@@ -864,21 +864,21 @@ The project should therefore be described as an **evidence-oriented experimental
 
 ## 15. Scientific and technical basis
 
-### 15.1 Requirement-driven repository evaluation
+### 15.1 Repository-level evaluation
 
 SWE-bench established repository-level issue resolution as a realistic software-engineering evaluation problem [11]. `evidence-gate` follows the same general preference for repository-grounded executable evaluation over snippet-only or narrative assessment.
 
 ### 15.2 Scaffold effects
 
-SWE-agent shows that the agent-computer interface can materially influence performance [11]. This motivates treating the scaffold as an experimental variable rather than attributing all outcomes to the model.
+SWE-agent shows that the agent-computer interface can materially influence performance [12]. This motivates treating the scaffold as an experimental variable rather than attributing all outcomes to the model.
 
 ### 15.3 External verification
 
-LLM-Modulo argues for combining generative models with external verifiers instead of relying on unassisted self-verification [12]. `evidence-gate` applies the same separation principle at the software-engineering governance boundary.
+LLM-Modulo argues for combining generative models with external verifiers instead of relying on unassisted self-verification [13]. `evidence-gate` applies the same separation principle at the software-engineering governance boundary.
 
 ### 15.4 Skill heterogeneity and interference
 
-SWE-Skills-Bench reports limited average marginal gains for skills in SWE and concrete negative cases caused by contextual or version mismatch [13]. SkillsBench reports broader positive average effects for curated skills while still finding task-level regressions and weak results for self-generated skills [14].
+SWE-Skills-Bench reports limited average marginal gains for skills in SWE and concrete negative cases caused by contextual or version mismatch [14]. SkillsBench reports broader positive average effects for curated skills while still finding task-level regressions and weak results for self-generated skills [15].
 
 These results motivate:
 
@@ -893,7 +893,7 @@ They do **not** prove that the current `evidence-gate` skill policy is optimal. 
 
 ### 15.5 Mutation testing
 
-Mutation testing provides a disciplined way to test whether a suite distinguishes selected faulty implementations from reference behavior [15]. The repository uses mutation tests as an anti-tautology mechanism for critical policy and verification invariants.
+Mutation testing provides a disciplined way to test whether a suite distinguishes selected faulty implementations from reference behavior [16]. The repository uses mutation tests as an anti-tautology mechanism for critical policy and verification invariants.
 
 ---
 
@@ -930,19 +930,22 @@ Mutation testing provides a disciplined way to test whether a suite distinguishe
 10. **OpenAI — Codex: Git worktrees.**  
     https://learn.chatgpt.com/docs/environments/git-worktrees
 
-11. Yang, J. et al. **SWE-agent: Agent-Computer Interfaces Enable Automated Software Engineering.** NeurIPS 2024.  
+11. Jimenez, C. E. et al. **SWE-bench: Can Language Models Resolve Real-World GitHub Issues?** ICLR 2024.  
+    https://arxiv.org/abs/2310.06770
+
+12. Yang, J. et al. **SWE-agent: Agent-Computer Interfaces Enable Automated Software Engineering.** NeurIPS 2024.  
     https://proceedings.neurips.cc/paper_files/paper/2024/hash/5a7c947568c1b1328ccc5230172e1e7c-Abstract-Conference.html
 
-12. Kambhampati, S. et al. **Position: LLMs Can't Plan, But Can Help Planning in LLM-Modulo Frameworks.** ICML 2024.  
+13. Kambhampati, S. et al. **Position: LLMs Can't Plan, But Can Help Planning in LLM-Modulo Frameworks.** ICML 2024.  
     https://proceedings.mlr.press/v235/kambhampati24a.html
 
-13. Han, T. et al. **SWE-Skills-Bench: Do Agent Skills Actually Help in Real-World Software Engineering?** arXiv:2603.15401, 2026 preprint.  
+14. Han, T. et al. **SWE-Skills-Bench: Do Agent Skills Actually Help in Real-World Software Engineering?** arXiv:2603.15401, 2026 preprint.  
     https://arxiv.org/abs/2603.15401
 
-14. Li, X. et al. **SkillsBench: Benchmarking How Well Agent Skills Work Across Diverse Tasks.** arXiv:2602.12670, 2026 preprint.  
+15. Li, X. et al. **SkillsBench: Benchmarking How Well Agent Skills Work Across Diverse Tasks.** arXiv:2602.12670, 2026 preprint.  
     https://arxiv.org/abs/2602.12670
 
-15. Jia, Y.; Harman, M. **An Analysis and Survey of the Development of Mutation Testing.** IEEE Transactions on Software Engineering 37(5), 2011.  
+16. Jia, Y.; Harman, M. **An Analysis and Survey of the Development of Mutation Testing.** IEEE Transactions on Software Engineering 37(5), 2011.  
     https://doi.org/10.1109/TSE.2010.62
 
 ---
