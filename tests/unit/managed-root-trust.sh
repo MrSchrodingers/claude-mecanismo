@@ -13,8 +13,7 @@ if ! command -v sudo >/dev/null 2>&1 || ! sudo -n true >/dev/null 2>&1; then
   exit 0
 fi
 
-# 1. The stock repository on a hosted runner is user-owned. Running the stock wrapper as root
-# must fail before any sibling helper can execute.
+# 1. A user-owned privileged source must be rejected before any sibling helper executes.
 MARK="$T/should-not-exist"
 mkdir -p "$T/fake-repo/install"
 cp "$W" "$T/fake-repo/install/apply-managed.sh"
@@ -29,8 +28,7 @@ sudo -n env -u MANAGED_PREFIX -u EVIDENCE_GATE_MANAGED_LEGACY \
 rc=$?
 if [ "$rc" -eq 78 ] && [ ! -e "$MARK" ]; then pass user-owned-source-rejected; else fail user-owned-source-rejected; fi
 
-# 2. A root-owned, non-writable, symlink-free snapshot is accepted. The fake delegated installer
-# does no writes because this case only exercises the source-of-code trust precondition.
+# 2. A root-owned, non-writable, symlink-free snapshot is accepted.
 ROOT_COPY="$T.root/repo"
 sudo mkdir -p "$ROOT_COPY/install"
 sudo cp "$W" "$ROOT_COPY/install/apply-managed.sh"
@@ -45,7 +43,7 @@ sudo -n env -u MANAGED_PREFIX -u EVIDENCE_GATE_MANAGED_LEGACY \
 rc=$?
 if [ "$rc" -eq 0 ]; then pass root-owned-source-accepted; else fail root-owned-source-accepted; fi
 
-# 3. The privileged override is forbidden on the real root even if its target is itself root-owned.
+# 3. Privileged helper overrides are forbidden on the real root.
 sudo -n env -u MANAGED_PREFIX EVIDENCE_GATE_MANAGED_LEGACY="$ROOT_COPY/install/apply-managed-legacy.sh" \
   "$ROOT_COPY/install/apply-managed.sh" --dry-run >/dev/null 2>&1
 rc=$?
@@ -65,6 +63,27 @@ sudo -n env -u MANAGED_PREFIX -u EVIDENCE_GATE_MANAGED_LEGACY \
   "$ROOT_COPY/install/apply-managed.sh" --dry-run >/dev/null 2>&1
 rc=$?
 if [ "$rc" -eq 78 ]; then pass writable-source-rejected; else fail writable-source-rejected; fi
+sudo chmod 0755 "$ROOT_COPY/install"
+
+# 6. Ownership postcondition is exercised under real uid 0 against an isolated prefix. The
+# deliberately wrong owner with group=root catches the historical find precedence bug.
+sudo sh -c "cat > '$ROOT_COPY/install/fake-owner.sh' <<'SH'
+#!/usr/bin/env bash
+p=\"\${MANAGED_PREFIX}\"
+mkdir -p \"\$p/opt/evidence-gate\" \"\$p/etc/claude-code\"
+echo x > \"\$p/opt/evidence-gate/x\"
+echo '{}' > \"\$p/etc/claude-code/managed-settings.json\"
+chmod 0755 \"\$p/opt/evidence-gate\"
+chmod 0644 \"\$p/opt/evidence-gate/x\"
+chown nobody:root \"\$p/opt/evidence-gate/x\"
+SH
+chmod 0755 '$ROOT_COPY/install/fake-owner.sh'
+chown root:root '$ROOT_COPY/install/fake-owner.sh'"
+PFX="$T.root/prefix-owner"
+sudo -n env MANAGED_PREFIX="$PFX" EVIDENCE_GATE_MANAGED_LEGACY="$ROOT_COPY/install/fake-owner.sh" \
+  "$ROOT_COPY/install/apply-managed.sh" >/dev/null 2>&1
+rc=$?
+if [ "$rc" -eq 1 ] && sudo test ! -e "$PFX/opt/evidence-gate"; then pass wrong-owner-rejected; else fail wrong-owner-rejected; fi
 
 echo "PASS=$P FAIL=$F"
 [ "$F" -eq 0 ]
